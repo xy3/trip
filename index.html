@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Planner</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/print.css" media="print">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧭</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">🧭</span>
+    <input id="tripTitle" class="trip-title" placeholder="Untitled trip" aria-label="Trip title">
+  </div>
+
+  <div class="dates">
+    <label>Start <input type="date" id="startDate"></label>
+    <label>End <input type="date" id="endDate"></label>
+  </div>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="totals" id="tripTotal" title="Total planned cost"></div>
+
+  <div class="topbar-actions">
+    <button id="btnPrint" class="btn" title="Print or save as PDF">Print</button>
+    <button id="btnShare" class="btn" title="Create a read-only share link">Share</button>
+    <button id="btnMenu" class="btn btn-icon" title="More" aria-haspopup="true">⋯</button>
+    <div id="menu" class="menu" hidden>
+      <button data-act="autophoto">Auto-photo new places</button>
+      <button data-act="export">Export trip file…</button>
+      <button data-act="import">Import trip file…</button>
+      <button data-act="fit">Fit map to trip</button>
+      <button data-act="reset" class="danger">Delete trip data…</button>
+    </div>
+  </div>
+</header>
+
+<div id="readonlyBanner" class="banner" hidden>
+  <strong>Read-only view.</strong> <span>You are viewing a shared itinerary.</span>
+  <button id="btnCopyToMine" class="btn btn-sm">Make an editable copy</button>
+</div>
+
+<main class="split">
+  <section class="pane pane-left" id="leftPane">
+    <div class="searchbar">
+      <input id="placeSearch" type="search" placeholder="Search places, addresses, attractions…" autocomplete="off">
+      <button id="btnSearch" class="btn btn-sm">Search</button>
+      <div id="searchResults" class="search-results" hidden></div>
+    </div>
+
+    <div class="view-tabs" role="tablist">
+      <button class="tab active" data-view="all" role="tab">Whole trip</button>
+      <button class="tab" id="btnStayRoute" title="Route each day out of and back into where you are staying">🛏 Stays in route</button>
+      <span class="tab-hint">Click a day to focus the map</span>
+    </div>
+
+    <div id="timeline" class="timeline"></div>
+  </section>
+
+  <div class="divider" id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+
+  <section class="pane pane-right">
+    <div id="map"></div>
+    <div class="map-overlay" id="mapLegend"></div>
+    <div class="map-status" id="routeSummary" hidden></div>
+  </section>
+</main>
+
+<!-- Activity / stay editor -->
+<dialog id="editor" class="dialog">
+  <form method="dialog" id="editorForm">
+    <header class="dialog-head">
+      <h2 id="editorTitle">Edit</h2>
+      <button value="cancel" class="btn btn-icon" aria-label="Close">✕</button>
+    </header>
+    <div class="dialog-body">
+      <label class="field">Name<input name="name" required></label>
+      <label class="field">Address / detail<input name="address"></label>
+
+      <div class="grid-2">
+        <label class="field">Category
+          <select name="category" id="editorCategory"></select>
+        </label>
+        <label class="field">Cost<input name="cost" type="number" step="0.01" min="0" placeholder="0.00"></label>
+      </div>
+
+      <div class="grid-2" id="stayDates" hidden>
+        <label class="field">Check-in<input name="checkIn" type="date"></label>
+        <label class="field">Check-out<input name="checkOut" type="date"></label>
+      </div>
+
+      <div class="grid-2">
+        <label class="field">Latitude<input name="lat" type="number" step="any" placeholder="optional"></label>
+        <label class="field">Longitude<input name="lng" type="number" step="any" placeholder="optional"></label>
+      </div>
+
+      <label class="field">Notes &amp; comments
+        <textarea name="notes" rows="4" placeholder="Reservation details, confirmation codes, opening hours…"></textarea>
+      </label>
+
+      <fieldset class="field">
+        <legend>Links &amp; attachments</legend>
+        <div id="linkList" class="chip-list"></div>
+        <div class="inline-add">
+          <input id="linkLabel" placeholder="Label (e.g. Booking confirmation)">
+          <input id="linkUrl" placeholder="https://…">
+          <button type="button" id="btnAddLink" class="btn btn-sm">Add link</button>
+        </div>
+        <div class="inline-add">
+          <input type="file" id="attachInput" multiple>
+          <button type="button" id="btnFindPhoto" class="btn btn-sm">✨ Find a photo</button>
+          <span class="hint">PDFs, tickets, any file — stored in this browser.</span>
+        </div>
+      </fieldset>
+    </div>
+    <footer class="dialog-foot">
+      <button type="button" id="btnDeleteItem" class="btn danger">Delete</button>
+      <span class="spacer"></span>
+      <button value="cancel" class="btn">Cancel</button>
+      <button value="save" class="btn btn-primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Lightbox -->
+<div id="lightbox" class="lightbox" hidden>
+  <button class="lb-close" id="lbClose" aria-label="Close">✕</button>
+  <button class="lb-nav lb-prev" id="lbPrev" aria-label="Previous">‹</button>
+  <figure class="lb-figure">
+    <img id="lbImage" alt="">
+    <figcaption>
+      <input id="lbCaption" placeholder="Add a caption or comment…">
+      <a id="lbSource" class="lb-source" target="_blank" rel="noopener" hidden>source ↗</a>
+      <span id="lbCount" class="lb-count"></span>
+    </figcaption>
+  </figure>
+  <button class="lb-nav lb-next" id="lbNext" aria-label="Next">›</button>
+</div>
+
+<input type="file" id="importInput" accept="application/json" hidden>
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+/* Clean, clutter-free itinerary for paper / PDF */
+@page { margin: 16mm 14mm; }
+
+:root{
+  --bg:#fff; --bg-2:#fff; --glass:#fff; --glass-2:#fff; --panel:#fff; --panel-solid:#fff;
+  --line:#d8d8d8; --line-2:#aaa; --ink:#000; --ink-2:#333; --ink-3:#666;
+  --accent:#000; --accent-soft:#f2f2f2;
+  --ring:none; --lift:none; --inner:none;
+}
+*{ backdrop-filter:none !important; -webkit-backdrop-filter:none !important; box-shadow:none !important; }
+body{ background-image:none !important; }
+.card-index{ color:#fff; }
+
+.topbar, .searchbar, .view-tabs, .divider, .pane-right, .banner,
+.card-actions, .add-row, .photo-del, .map-overlay, .map-status,
+.toast, .lightbox, dialog { display: none !important; }
+
+html, body { height:auto; overflow:visible; background:#fff; color:#000; font-size:11pt; }
+.split { display:block; height:auto; }
+.pane-left { width:auto !important; border:0; background:#fff; }
+.timeline { overflow:visible; padding:0; }
+
+body::before{
+  content: attr(data-print-title);
+  display:block; font-size:20pt; font-weight:700; letter-spacing:-.02em; margin-bottom:2mm;
+}
+body::after{
+  content: attr(data-print-sub);
+  position:fixed; bottom:0; left:0; right:0; font-size:8.5pt; color:#666;
+  border-top:.5pt solid #ccc; padding-top:2mm;
+}
+
+.block{
+  break-inside:avoid; page-break-inside:avoid; border:0; border-top:1pt solid #000;
+  border-radius:0; box-shadow:none; margin:0 0 6mm; background:#fff;
+}
+.block.collapsed .block-body{ display:block !important; }
+.block-head{ border:0; padding:2mm 0 1mm; background:#fff; }
+.block-head .chev{ display:none; }
+.day-num{ background:#000; color:#fff; border-radius:3px; }
+.block-body{ padding:0; }
+
+.card{
+  break-inside:avoid; border:0; border-left:2.5pt solid var(--cat,#666);
+  border-radius:0; padding:1.5mm 0 1.5mm 3mm; margin:0 0 2mm; background:#fff;
+}
+.card-index{ background:var(--cat,#666); }
+.card-sub{ white-space:normal; color:#444; }
+.card-notes{ color:#222; }
+.cat-tag{ border:.5pt solid #999; color:#333; background:#fff; }
+.pill{ border:.5pt solid #999; background:#fff; color:#333; }
+.stay{ border:.5pt solid #999; background:#f5f5f5; }
+.leg{ color:#666; }
+.gallery{ columns:4 60px; }
+.gallery img{ border:.5pt solid #ccc; }
+.gallery figcaption{ position:static; color:#444; background:none; padding:1px 0; white-space:normal; }

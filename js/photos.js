@@ -11,7 +11,10 @@ const NEARBY_M = 250;   // how close an unrelated page must be to stand in as sc
 const norm = s => (s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9 ]/g, '').trim();
 
 /* Wikimedia asks API clients to identify themselves; browsers cannot set
-   User-Agent, so Api-User-Agent is the sanctioned stand-in. */
+   User-Agent, so Api-User-Agent is the sanctioned stand-in. It goes on api.php
+   requests ONLY: upload.wikimedia.org does not list it in
+   Access-Control-Allow-Headers, so sending it there turns a simple image GET
+   into a preflight that the image host rejects. */
 const UA = { 'Api-User-Agent': 'TripPlanner/1.0 (static personal trip planner)' };
 
 const call = async params => {
@@ -77,7 +80,7 @@ export async function findPhoto({ name, lat, lng }, { signal } = {}) {
     }
     if (!page) return null;
 
-    const res = await fetch(page.thumbnail.source, { signal, headers: UA });
+    const res = await fetch(page.thumbnail.source, { signal });   // no custom headers: keep it a simple request
     if (!res.ok) return null;
     const blob = await res.blob();
     if (!blob.type.startsWith('image/')) return null;

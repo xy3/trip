@@ -280,19 +280,29 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
   opacity:0;transition:opacity .14s; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
 }
 .gallery figure:hover .photo-del{opacity:1}
-/* a lone photo has no grid to fit into, so let it take the whole width */
-.gallery.single{columns:1;column-gap:0}
-.gallery.single figure{margin:0}
-.gallery.single img{width:100%;max-height:340px;object-fit:cover;border-radius:11px}
-.gallery.single figcaption{font-size:12px;padding:8px 10px;border-radius:0 0 11px 11px}
-
 /* thumbnails attached to a single activity stay compact */
 .card .gallery{columns:3 76px;column-gap:5px;padding:7px 0 1px}
 .card .gallery figure{margin:0 0 5px}
 .card .gallery img{border-radius:8px}
 .card .gallery figcaption{font-size:10px;padding:2px 6px;border-radius:0 0 8px 8px}
-.card .gallery.single img,.stay-block .gallery.single img{max-height:220px;border-radius:9px}
-.card .gallery.single figcaption,.stay-block .gallery.single figcaption{font-size:11px;padding:5px 8px;border-radius:0 0 9px 9px}
+
+/* A lone photo has no grid to fit into, so it takes the whole width. These
+   come last, and match the specificity of the .card/.stay-block rules above,
+   so they win the cascade wherever a gallery lives. */
+.gallery.single,
+.card .gallery.single,
+.stay-block .gallery.single{columns:1;column-gap:0}
+.gallery.single figure,
+.card .gallery.single figure,
+.stay-block .gallery.single figure{margin:0;width:100%}
+.gallery.single img,
+.card .gallery.single img,
+.stay-block .gallery.single img{width:100%;max-height:340px;object-fit:cover;border-radius:11px}
+.card .gallery.single img,
+.stay-block .gallery.single img{max-height:240px;border-radius:10px}
+.gallery.single figcaption,
+.card .gallery.single figcaption,
+.stay-block .gallery.single figcaption{font-size:12px;padding:8px 10px;border-radius:0 0 11px 11px}
 
 /* image-file drag target */
 .block.filedrop,.card.filedrop,.stay-block.filedrop{outline:1px dashed rgba(122,184,255,.6);outline-offset:2px}

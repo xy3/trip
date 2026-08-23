@@ -61,6 +61,7 @@ export const haversine = (a, b) => {
 };
 export const fmtKm = km => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(km < 10 ? 1 : 0)} km`);
 export const fmtDur = min => {
+  if (min < 1) return '<1 min';
   min = Math.round(min);
   if (min < 60) return `${min} min`;
   const h = Math.floor(min / 60);

@@ -332,7 +332,7 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
 
 /* tone the OSM raster down to match the theme */
 .leaflet-container{background:var(--bg);font:inherit}
-.leaflet-tile-pane{filter:invert(1) hue-rotate(185deg) brightness(.92) contrast(.88) saturate(.75)}
+.leaflet-tile-pane{filter:invert(1) hue-rotate(190deg) brightness(.93) contrast(.85) saturate(.35)}
 .leaflet-control-zoom a{
   background:var(--panel-solid) !important;color:var(--ink) !important;
   border-color:var(--line-2) !important;

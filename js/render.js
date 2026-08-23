@@ -169,7 +169,10 @@ function addRow(bucket, isDay) {
 function gallery(bucket) {
   const photos = photosOf(bucket);
   if (!photos.length) return '';
-  return `<div class="gallery${photos.length === 1 ? ' single' : ''}" data-gallery="${bucket}">${photos.map((p, i) => `
+  // column count follows the photo count, capped at three, so a gallery always
+  // fills its width instead of leaving empty columns
+  const cols = Math.min(photos.length, 3);
+  return `<div class="gallery cols-${cols}" data-gallery="${bucket}">${photos.map((p, i) => `
     <figure data-photo="${p.id}" data-index="${i}">
       <img alt="${esc(p.caption || '')}" data-blob="${p.id}">
       ${p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''}

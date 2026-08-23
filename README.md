@@ -181,8 +181,10 @@ This runs in the background when a place is added from search, so adding a place
 on the network. Toggle it in ⋯ → *Auto-photo new places*; the editor's **✨ Find a photo**
 button runs the same lookup on demand.
 
-Photos are stored as blobs and rendered as a CSS-columns masonry grid. A gallery holding a
-single photo drops to one column so the image fills the available width.
+Photos are stored as blobs and rendered as a CSS-columns masonry grid whose **column count
+follows the photo count, capped at three** (`render.js` sets a `cols-1`/`cols-2`/`cols-3`
+class). One photo fills the whole width, two take half each, three or more form a
+three-column masonry — so a gallery never leaves an empty column, at any nesting level.
 
 ### Share links
 

@@ -195,10 +195,6 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
 
 /* stays */
 .stay-block{margin:0 0 8px}
-.stay-block .gallery{columns:3 76px;column-gap:5px;padding:6px 2px 0}
-.stay-block .gallery figure{margin:0 0 5px}
-.stay-block .gallery img{border-radius:8px}
-.stay-block .gallery figcaption{font-size:10px;padding:2px 6px;border-radius:0 0 8px 8px}
 .stay{
   display:flex;align-items:center;gap:9px;margin:0;padding:9px 11px;border-radius:10px;
   background:linear-gradient(90deg, rgba(157,139,255,.10), transparent);
@@ -264,9 +260,15 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
 .add-row .btn{font-size:12px;color:var(--ink-3)}
 .add-row .btn:hover{color:var(--ink)}
 
-/* gallery */
-.gallery{columns:2 168px;column-gap:8px;padding:8px 2px 2px}
-.gallery figure{margin:0 0 8px;break-inside:avoid;position:relative;cursor:zoom-in}
+/* gallery — CSS-columns masonry. The column count comes from the photo count
+   (capped at three, set as a class by render.js) so the images always span the
+   full width: one photo fills it, two take half each, three or more form a
+   three-column masonry with ragged bottoms. */
+.gallery{columns:3;column-gap:8px;padding:8px 0 2px}
+.gallery.cols-1{columns:1}
+.gallery.cols-2{columns:2}
+.gallery.cols-3{columns:3}
+.gallery figure{margin:0 0 8px;break-inside:avoid;position:relative;cursor:zoom-in;width:100%}
 .gallery img{width:100%;display:block;border-radius:10px;border:1px solid var(--line);background:var(--glass)}
 .gallery figure:hover img{border-color:rgba(122,184,255,.45)}
 .gallery figcaption{
@@ -280,29 +282,18 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
   opacity:0;transition:opacity .14s; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
 }
 .gallery figure:hover .photo-del{opacity:1}
-/* thumbnails attached to a single activity stay compact */
-.card .gallery{columns:3 76px;column-gap:5px;padding:7px 0 1px}
-.card .gallery figure{margin:0 0 5px}
-.card .gallery img{border-radius:8px}
-.card .gallery figcaption{font-size:10px;padding:2px 6px;border-radius:0 0 8px 8px}
 
-/* A lone photo has no grid to fit into, so it takes the whole width. These
-   come last, and match the specificity of the .card/.stay-block rules above,
-   so they win the cascade wherever a gallery lives. */
-.gallery.single,
-.card .gallery.single,
-.stay-block .gallery.single{columns:1;column-gap:0}
-.gallery.single figure,
-.card .gallery.single figure,
-.stay-block .gallery.single figure{margin:0;width:100%}
-.gallery.single img,
-.card .gallery.single img,
-.stay-block .gallery.single img{width:100%;max-height:340px;object-fit:cover;border-radius:11px}
-.card .gallery.single img,
-.stay-block .gallery.single img{max-height:240px;border-radius:10px}
-.gallery.single figcaption,
-.card .gallery.single figcaption,
-.stay-block .gallery.single figcaption{font-size:12px;padding:8px 10px;border-radius:0 0 11px 11px}
+/* A lone photo has no neighbours to set its height, so cap it and crop. */
+.gallery.cols-1 img{max-height:340px;object-fit:cover;border-radius:11px}
+.gallery.cols-1 figcaption{font-size:12px;padding:8px 10px;border-radius:0 0 11px 11px}
+
+/* galleries hanging off one activity or stay are tighter, same column rules */
+.card .gallery,.stay-block .gallery{column-gap:6px;padding:7px 0 1px}
+.card .gallery figure,.stay-block .gallery figure{margin:0 0 6px}
+.card .gallery img,.stay-block .gallery img{border-radius:9px}
+.card .gallery figcaption,.stay-block .gallery figcaption{font-size:10.5px;padding:3px 7px;border-radius:0 0 9px 9px}
+.card .gallery.cols-1 img,.stay-block .gallery.cols-1 img{max-height:240px;border-radius:10px}
+.card .gallery.cols-1 figcaption,.stay-block .gallery.cols-1 figcaption{font-size:11.5px;padding:6px 9px;border-radius:0 0 10px 10px}
 
 /* image-file drag target */
 .block.filedrop,.card.filedrop,.stay-block.filedrop{outline:1px dashed rgba(122,184,255,.6);outline-offset:2px}

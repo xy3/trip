@@ -58,7 +58,7 @@ Any static file server works. `file://` does **not**, because the app is built f
   timeline. The whole-trip view uses straight lines and `≈` estimates.
 
 **Media**
-- Masonry photo grids on days, on the scratchpad, on individual activities and on stays.
+- Justified photo grids on days, on the scratchpad, on individual activities and on stays.
 - Add photos by button, by dragging image files onto a target, or by **pasting** from the clipboard.
 - Places added from search get a representative high-resolution Wikipedia photo automatically.
 - Click any photo for a full-screen lightbox with ←/→ and a per-image caption.
@@ -181,10 +181,17 @@ This runs in the background when a place is added from search, so adding a place
 on the network. Toggle it in ⋯ → *Auto-photo new places*; the editor's **✨ Find a photo**
 button runs the same lookup on demand.
 
-Photos are stored as blobs and rendered as a CSS-columns masonry grid whose **column count
-follows the photo count, capped at three** (`render.js` sets a `cols-1`/`cols-2`/`cols-3`
-class). One photo fills the whole width, two take half each, three or more form a
-three-column masonry — so a gallery never leaves an empty column, at any nesting level.
+Photos are stored as blobs and rendered as a **justified grid**: `render.js` groups them into
+rows of at most three (four photos become 2 + 2 rather than 3 + 1) and gives each row the sum
+of its aspect ratios as a CSS `aspect-ratio`, and each photo a `flex-grow` share of that sum.
+Every row therefore fills the full width exactly and every photo in a row is exactly as tall
+as its neighbours — no ragged bottoms, no empty columns, at any nesting level.
+
+Within a row the shares use the *square root* of each ratio, which pulls a panorama and a
+portrait toward each other instead of leaving the portrait a sliver; `object-fit: cover`
+absorbs the small difference. A photo alone in its row keeps its true shape. Ratios are
+measured the first time a photo paints and cached on the photo record (`r`), then the row is
+rebalanced in place — no re-render, so the scroll position never jumps.
 
 ### Share links
 

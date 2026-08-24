@@ -51,5 +51,7 @@ body::after{
 .pill{ border:.5pt solid #999; background:#fff; color:#333; }
 .stay{ border:.5pt solid #999; background:#f5f5f5; }
 .leg{ color:#666; }
-.gallery img{ border:.5pt solid #ccc; }
-.gallery figcaption{ position:static; color:#444; background:none; padding:1px 0; white-space:normal; }
+.gallery figure{ border:.5pt solid #ccc; }
+/* the justified rows keep their proportions on paper; the caption stays an
+   overlay because the figure is a fixed-ratio box, just inked for print */
+.gallery figcaption{ color:#222; background:rgba(255,255,255,.82); }

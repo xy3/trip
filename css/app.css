@@ -260,40 +260,37 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
 .add-row .btn{font-size:12px;color:var(--ink-3)}
 .add-row .btn:hover{color:var(--ink)}
 
-/* gallery — CSS-columns masonry. The column count comes from the photo count
-   (capped at three, set as a class by render.js) so the images always span the
-   full width: one photo fills it, two take half each, three or more form a
-   three-column masonry with ragged bottoms. */
-.gallery{columns:3;column-gap:8px;padding:8px 0 2px}
-.gallery.cols-1{columns:1}
-.gallery.cols-2{columns:2}
-.gallery.cols-3{columns:3}
-.gallery figure{margin:0 0 8px;break-inside:avoid;position:relative;cursor:zoom-in;width:100%}
-.gallery img{width:100%;display:block;border-radius:10px;border:1px solid var(--line);background:var(--glass)}
-.gallery figure:hover img{border-color:rgba(122,184,255,.45)}
+/* gallery — justified rows. render.js groups photos into rows of at most
+   three and hands each row the sum of its aspect ratios (--ar) and each photo
+   its own (--r). aspect-ratio then fixes one shared height per row while
+   flex-grow splits the width in proportion, so every row fills the full width
+   and neighbours always line up. max-height keeps a tall lone portrait from
+   swallowing the block; object-fit absorbs the difference. */
+.gallery{display:flex;flex-direction:column;gap:8px;padding:8px 0 2px}
+.gallery .grow{display:flex;gap:8px;aspect-ratio:var(--ar,1.5);min-height:150px;max-height:340px}
+.gallery figure{
+  flex:var(--r,100) 1 0;min-width:0;margin:0;position:relative;cursor:zoom-in;overflow:hidden;
+  border-radius:10px;border:1px solid var(--line);background:var(--glass);
+}
+.gallery img{width:100%;height:100%;display:block;object-fit:cover}
+.gallery figure:hover{border-color:rgba(122,184,255,.45)}
 .gallery figcaption{
   position:absolute;left:0;right:0;bottom:0;padding:6px 8px;font-size:11.5px;color:#f2f5f9;
-  background:linear-gradient(transparent,rgba(0,0,0,.78)); border-radius:0 0 10px 10px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:linear-gradient(transparent,rgba(0,0,0,.78));
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;
 }
 .gallery .photo-del{
   position:absolute;top:6px;right:6px;background:rgba(10,12,16,.7);color:#fff;
   border:1px solid var(--line-2);border-radius:8px;cursor:pointer;font-size:11px;padding:2px 7px;
-  opacity:0;transition:opacity .14s; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+  opacity:0;transition:opacity .15s;
 }
 .gallery figure:hover .photo-del{opacity:1}
 
-/* A lone photo has no neighbours to set its height, so cap it and crop. */
-.gallery.cols-1 img{max-height:340px;object-fit:cover;border-radius:11px}
-.gallery.cols-1 figcaption{font-size:12px;padding:8px 10px;border-radius:0 0 11px 11px}
-
-/* galleries hanging off one activity or stay are tighter, same column rules */
-.card .gallery,.stay-block .gallery{column-gap:6px;padding:7px 0 1px}
-.card .gallery figure,.stay-block .gallery figure{margin:0 0 6px}
-.card .gallery img,.stay-block .gallery img{border-radius:9px}
-.card .gallery figcaption,.stay-block .gallery figcaption{font-size:10.5px;padding:3px 7px;border-radius:0 0 9px 9px}
-.card .gallery.cols-1 img,.stay-block .gallery.cols-1 img{max-height:240px;border-radius:10px}
-.card .gallery.cols-1 figcaption,.stay-block .gallery.cols-1 figcaption{font-size:11.5px;padding:6px 9px;border-radius:0 0 10px 10px}
+/* galleries hanging off one activity or stay are tighter */
+.card .gallery,.stay-block .gallery{gap:6px;padding:7px 0 1px}
+.card .gallery .grow,.stay-block .gallery .grow{gap:6px;min-height:112px;max-height:240px}
+.card .gallery figure,.stay-block .gallery figure{border-radius:9px}
+.card .gallery figcaption,.stay-block .gallery figcaption{font-size:10.5px;padding:3px 7px}
 
 /* image-file drag target */
 .block.filedrop,.card.filedrop,.stay-block.filedrop{outline:1px dashed rgba(122,184,255,.6);outline-offset:2px}

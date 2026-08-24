@@ -1,5 +1,5 @@
 import {
-  state, days, itemsIn, staysOn, dayCost, tripCost, photosOf, dayRoute, UNSCHEDULED,
+  state, days, itemsIn, staysOn, dayCost, tripCost, photosOf, setPhotoRatio, dayRoute, UNSCHEDULED,
 } from './store.js';
 import { catOf } from './categories.js';
 import { $, esc, fmtDate, fmtDateShort, money, fmtKm, fmtDur, dayCount } from './util.js';
@@ -166,24 +166,90 @@ function addRow(bucket, isDay) {
   </div>`;
 }
 
+/* gallery — a justified grid: photos are laid in rows of at most three and
+   every photo in a row gets the same height, with widths proportional to its
+   aspect ratio. Each row therefore fills the full width exactly and no image
+   ends up towering over its neighbours. The ratio is learned on first paint
+   (see measure below) and cached on the photo record; until then we assume a
+   mild landscape so the first frame is close. */
+const DEFAULT_RATIO = 1.5;
+const clampRatio = p => Math.min(2.4, Math.max(0.62, p.r || DEFAULT_RATIO));
+
+/* Within a row we lay photos out by the square root of their ratio rather than
+   the ratio itself. Sharing the width by the raw ratio is faithful but unkind —
+   a panorama beside a portrait leaves the portrait a sliver — and the square
+   root pulls the shares toward each other, so the row reads as evenly weighted
+   and object-fit takes up the small difference. A photo alone in its row keeps
+   its true shape; there is nothing to balance it against. */
+const ratioOf = (p, n) => (n === 1 ? clampRatio(p) : Math.sqrt(clampRatio(p)));
+
+/* flex-grow shares, normalised to sum to 100: raw factors under 1 would leave a
+   lone photo short of the full width, since flex only hands out that fraction. */
+const share = (r, sum) => (r / sum * 100).toFixed(3);
+
+/* rows of three, except that a lone leftover is paired instead: 4 photos read
+   better as 2 + 2 than as 3 + 1. */
+function chunk(photos) {
+  const out = [];
+  for (let i = 0; i < photos.length;) {
+    const left = photos.length - i;
+    const take = left === 4 ? 2 : Math.min(3, left);
+    out.push(photos.slice(i, i + take));
+    i += take;
+  }
+  return out;
+}
+
 function gallery(bucket) {
   const photos = photosOf(bucket);
   if (!photos.length) return '';
-  // column count follows the photo count, capped at three, so a gallery always
-  // fills its width instead of leaving empty columns
-  const cols = Math.min(photos.length, 3);
-  return `<div class="gallery cols-${cols}" data-gallery="${bucket}">${photos.map((p, i) => `
-    <figure data-photo="${p.id}" data-index="${i}">
-      <img alt="${esc(p.caption || '')}" data-blob="${p.id}">
-      ${p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''}
-      <button class="photo-del" data-photo-del="${p.id}" data-bucket="${bucket}" title="Remove">✕</button>
-    </figure>`).join('')}</div>`;
+  let index = -1;
+  const rows = chunk(photos).map(row => {
+    const rs = row.map(p => ratioOf(p, row.length));
+    const sum = rs.reduce((a, b) => a + b, 0);
+    return `<div class="grow" style="--ar:${sum.toFixed(4)}">${row.map((p, j) => {
+      index++;
+      return `<figure data-photo="${p.id}" data-index="${index}" style="--r:${share(rs[j], sum)}">
+        <img alt="${esc(p.caption || '')}" data-blob="${p.id}">
+        ${p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''}
+        <button class="photo-del" data-photo-del="${p.id}" data-bucket="${bucket}" title="Remove">✕</button>
+      </figure>`;
+    }).join('')}</div>`;
+  }).join('');
+  return `<div class="gallery" data-gallery="${bucket}">${rows}</div>`;
 }
 
-async function hydratePhotos(root) {
+function hydratePhotos(root) {
   for (const img of root.querySelectorAll('img[data-blob]')) {
-    const url = await db.blobURL(img.dataset.blob);
-    if (url) img.src = url;
+    db.blobURL(img.dataset.blob).then(url => {
+      if (!url) return;
+      img.addEventListener('load', () => measure(img), { once: true });
+      img.src = url;
+    });
+  }
+}
+
+/* first paint of a photo tells us its true shape; record it and rebalance the
+   row widths in place (no re-render, so the scroll position stays put) */
+function measure(img) {
+  const gal = img.closest('.gallery');
+  if (!gal || !img.naturalWidth || !img.naturalHeight) return;
+  if (setPhotoRatio(gal.dataset.gallery, img.dataset.blob, img.naturalWidth / img.naturalHeight)) retune(gal);
+}
+
+function retune(gal) {
+  const list = photosOf(gal.dataset.gallery);
+  const ratios = new Map();
+  for (const row of gal.querySelectorAll('.grow')) {
+    for (const f of row.children) {
+      const rec = list.find(p => p.id === f.dataset.photo);
+      if (rec) ratios.set(rec.id, ratioOf(rec, row.children.length));
+    }
+    const figs = [...row.children];
+    const rs = figs.map(f => ratios.get(f.dataset.photo) ?? DEFAULT_RATIO);
+    const sum = rs.reduce((a, b) => a + b, 0);
+    figs.forEach((f, i) => f.style.setProperty('--r', share(rs[i], sum)));
+    row.style.setProperty('--ar', sum.toFixed(4));
   }
 }
 

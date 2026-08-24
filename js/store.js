@@ -328,6 +328,15 @@ export async function removePhoto(bucket, blobId) {
   save(); emit('photos');
 }
 
+/* Aspect ratio, learned the first time a photo paints. It only feeds layout,
+   so it is persisted without an emit: the caller retunes the gallery in place
+   rather than re-rendering the timeline under the user's scroll position. */
+export function setPhotoRatio(bucket, blobId, r) {
+  const p = photosOf(bucket).find(x => x.id === blobId);
+  if (!p || !(r > 0) || p.r === r) return false;
+  p.r = r; save(); return true;
+}
+
 export function setPhotoCaption(bucket, blobId, caption) {
   const p = photosOf(bucket).find(x => x.id === blobId);
   if (p) { p.caption = caption; save(); emit('photo-caption'); }

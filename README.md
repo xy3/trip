@@ -1,43 +1,55 @@
-# Trip Planner
+<div align="center">
 
-A split-screen trip planner: a scrollable itinerary on the left, a live map on the right.
-It is a **static site** — no build step, no dependencies to install, no accounts, no server.
+# 🧭 Trip Planner
+
+**A split-screen trip planner: a scrollable itinerary on the left, a live map on the right.**
+
+A single static site — no build step, no dependencies to install, no accounts, no server.
 Your trip lives in your own browser.
 
+![static site](https://img.shields.io/badge/static_site-no_build_step-7ab8ff?style=flat-square)
+![dependencies](https://img.shields.io/badge/npm_dependencies-0-57c98a?style=flat-square)
+![vanilla](https://img.shields.io/badge/vanilla-ES_modules-9d8bff?style=flat-square)
+![keyless](https://img.shields.io/badge/API_keys-none-e8c14a?style=flat-square)
+
+<img src="docs/screenshot-trip.jpg" alt="The trip planner: itinerary on the left, map on the right" width="100%">
+
+</div>
+
+---
+
+## Quick start
+
 ```bash
+git clone https://github.com/xy3/trip.git && cd trip
 python3 -m http.server 8123     # then open http://localhost:8123
 ```
 
-Any static file server works. `file://` does **not**, because the app is built from ES modules.
-
----
+Any static file server works — `npx serve`, `caddy file-server`, a GitHub Pages branch, an
+S3 bucket. `file://` does **not**, because the app is built from ES modules.
 
 ## Table of contents
 
 - [What it does](#what-it-does)
 - [How it works](#how-it-works)
-  - [Data model](#data-model)
-  - [Where your data lives](#where-your-data-lives)
-  - [Day buckets and the date range](#day-buckets-and-the-date-range)
-  - [Routing: how a day is drawn](#routing-how-a-day-is-drawn)
-  - [Photos](#photos)
-  - [Share links](#share-links)
-  - [External services](#external-services)
+  - [Data model](#data-model) · [Where your data lives](#where-your-data-lives) · [Day buckets](#day-buckets-and-the-date-range)
+  - [Routing](#routing-how-a-day-is-drawn) · [Place search](#place-search) · [Photos](#photos)
+  - [Share links](#share-links) · [External services](#external-services)
 - [Keyboard, mouse and drag targets](#keyboard-mouse-and-drag-targets)
-- [Project layout](#project-layout)
-- [Tests](#tests)
-- [Limits and trade-offs](#limits-and-trade-offs)
+- [Project layout](#project-layout) · [Tests](#tests) · [Limits and trade-offs](#limits-and-trade-offs)
 
 ---
 
 ## What it does
 
-**Workspace**
+### 🗓 Workspace
+
 - Fixed split layout with a draggable divider; the width is remembered.
 - Start/end date pickers generate one block per day.
 - An **Ideas scratchpad** holds places before they are scheduled.
 
-**Itinerary**
+### 📋 Itinerary
+
 - Drag cards between the scratchpad and any day, or reorder within a day.
 - **Accommodation** blocks span check-in → check-out and are pinned to the top of every day
   they cover. Drag a stay to another day to shift the whole booking, use −/+ for nights, or
@@ -45,26 +57,34 @@ Any static file server works. `file://` does **not**, because the app is built f
 - Categories — Food, Sightseeing, Outdoors, Transit, Lodging, Shopping, Nightlife, Other —
   drive the card accent, the tag, and the map marker colour.
 - Inline notes on every activity for reservations, confirmation codes and opening hours.
-- A cost field per activity and stay, rolled up per day and across the trip.
+- A cost field per activity and stay, rolled up per day and across the whole trip.
 - Links and file attachments (tickets, PDFs) on any activity.
 
-**Search and map**
-- Place search across three sources at once (Nominatim, Photon, geotagged Wikipedia), ranked
-  together and biased toward whatever the map is showing. Click a result to add it, or **drag it onto
-  a day**. Results recognised as hotels are added as *accommodation* rather than as a stop.
+### 🔎 Search and map
+
+- Place search across **three sources at once** — Nominatim, Photon and geotagged Wikipedia —
+  ranked together and biased toward whatever the map is showing. Click a result to add it, or
+  **drag it onto a day**. Results recognised as hotels are added as *accommodation* rather
+  than as a stop.
 - Click a day header to focus the map on that day; click again, or press **Whole trip**, to
   zoom back out.
 - Pins are numbered 1, 2, 3… in itinerary order, with the path drawn between consecutive stops.
-- The focused day is routed on real roads with per-leg times and distances printed into the
+- The focused day is routed on real roads, with per-leg times and distances printed into the
   timeline. The whole-trip view uses straight lines and `≈` estimates.
 
-**Media**
+<img src="docs/screenshot-day.jpg" alt="A focused day: numbered pins, a road route and per-leg travel times" width="100%">
+
+### 🖼 Media
+
 - Justified photo grids on days, on the scratchpad, on individual activities and on stays.
-- Add photos by button, by dragging image files onto a target, or by **pasting** from the clipboard.
+- Add photos with the button, by dragging image files onto a target, or by **pasting**.
 - Places added from search get a representative high-resolution Wikipedia photo automatically.
 - Click any photo for a full-screen lightbox with ←/→ and a per-image caption.
 
-**Output**
+<img src="docs/screenshot-lightbox.jpg" alt="The full-screen lightbox with a caption and a link back to the source" width="100%">
+
+### 📤 Output
+
 - **Print** produces a clean, map-free itinerary for paper or PDF.
 - **Share** copies a read-only URL that carries the whole itinerary inside the link itself.
 - ⋯ → export/import a `.trip.json` bundle, which *does* include photos and attachments.
@@ -83,15 +103,15 @@ Everything is one plain JSON document, `state.trip`, defined in `js/store.js`:
   items:  { [id]: Activity },                   // every activity, scheduled or not
   stays:  { [id]: Stay },                       // accommodation, keyed separately
   order:  { unscheduled: [id…], '2026-09-01': [id…], … },   // the itinerary itself
-  photos: { [bucket]: [{ id, caption, source }] },
+  photos: { [bucket]: [{ id, caption, source, r }] },
   collapsed: { [bucket]: true },
 }
 ```
 
-The important idea is that **`order` is the itinerary** and `items` is just storage. A day is
-an array of ids; scheduling something is moving its id between arrays; reordering is moving it
-within one. Nothing is duplicated, so an activity cannot be in two days at once, and
-`normalize()` enforces exactly that after every structural change.
+> **`order` is the itinerary; `items` is just storage.**
+> A day is an array of ids. Scheduling something is moving its id between arrays; reordering
+> is moving it within one. Nothing is duplicated, so an activity cannot be in two days at
+> once, and `normalize()` enforces exactly that after every structural change.
 
 A **bucket** is any key that can own things: `'unscheduled'`, a date like `'2026-09-01'`, or —
 for photos only — an activity or stay id. That one idea is why photos can hang off a day, a
@@ -101,8 +121,8 @@ place, or a hotel without any special cases.
 rather than sitting in one day's order, and are rendered into every day between check-in and
 check-out.
 
-Dates are handled as plain `YYYY-MM-DD` strings throughout (`js/util.js`), never as `Date`
-objects with a time — so no trip has ever shifted by a day because of a timezone.
+Dates are plain `YYYY-MM-DD` strings throughout (`js/util.js`), never `Date` objects with a
+time — so no trip has ever shifted by a day because of a timezone.
 
 ### Where your data lives
 
@@ -116,7 +136,7 @@ objects with a time — so no trip has ever shifted by a day because of a timezo
 decoupled: `referencedBlobs()` collects every id the document still points at, and `db.gc()`
 deletes the rest on startup. Object URLs are cached per id and revoked when a photo is removed.
 
-Nothing is uploaded anywhere.
+**Nothing is uploaded anywhere.**
 
 ### Day buckets and the date range
 
@@ -169,31 +189,31 @@ called *Ochiairo* or a park written 箕面 in OSM and "Minoo" by everyone else s
 nothing. `searchPlaces` therefore asks three keyless sources in parallel and merges them:
 
 | Source | Good at |
-| --- | --- |
-| Nominatim | addresses, exact OSM names, and an `importance` score for prominence |
-| Photon | the same OSM data behind a fuzzy, typo-tolerant index — finds partial and transliterated names |
-| Wikipedia | geotagged articles, covering landmarks OSM knows only under their local name |
+|---|---|
+| **Nominatim** | addresses, exact OSM names, and an `importance` score for prominence |
+| **Photon** | the same OSM data behind a fuzzy, typo-tolerant index — finds partial and transliterated names |
+| **Wikipedia** | geotagged articles, covering landmarks OSM knows only under their local name |
 
 A source that fails or rate-limits just contributes nothing; an error surfaces only if all
-three fail. Hits are deduped by position and name, and re-ranked on four signals:
+three fail. Hits are deduped by position and name, then re-ranked on four signals:
 
-- **name match** — exact, prefix, or how many words of the query the name covers (with a
-  prefix-tolerant comparison, so "Minoo" matches "Minō")
-- **prominence** — Nominatim's `importance`, a bonus for having a Wikipedia article, and a
-  bonus for each extra source that independently found the same spot
-- **where the map is looking** — `map.viewCenter()`, once zoomed in past continental level,
-  falls back to the trip's own places. This is what decides between namesakes: with the map
-  over Osaka, "minoo park" returns Japan's Meiji-no-Mori Minō park first; over the whole
-  world, the park literally named "Minoo Park" in Iran wins
-- a small penalty for motorway junctions, bus stops and other non-destinations
+- **Name match** — exact, prefix, or how many words of the query the name covers, with a
+  prefix-tolerant comparison so "Minoo" matches "Minō".
+- **Prominence** — Nominatim's `importance`, a bonus for having a Wikipedia article, and a
+  bonus for each extra source that independently found the same spot.
+- **Where the map is looking** — `map.viewCenter()` once zoomed in past continental level,
+  falling back to the trip's own places. This is what decides between namesakes: with the map
+  over Osaka, `minoo park` returns Japan's Meiji-no-Mori Minō park first; over the whole
+  world, the park literally named "Minoo Park" in Iran wins.
+- A small penalty for motorway junctions, bus stops and other non-destinations.
 
-If nothing matches every word of the query, one relaxed retry goes out. Japanese place
-names carry their category as a suffix and OSM usually stores the English generic instead,
-so *Gioji* — tagged `Giō Temple`, with no Wikipedia article at all — is invisible to all
-three sources as typed. The retry splits the suffix off and substitutes the English word:
+If nothing matches every word of the query, **one relaxed retry** goes out. Japanese place
+names carry their category as a suffix and OSM usually stores the English generic instead, so
+*Gioji* — tagged `Giō Temple`, with no Wikipedia article at all — is invisible to all three
+sources as typed. The retry splits the suffix off and substitutes the English word:
 
 | Typed | Retried as |
-| --- | --- |
+|---|---|
 | `gioji temple`, `gioji` | `gio temple` |
 | `kiyomizudera` | `kiyomizu temple` |
 | `meiji jingu` | `meiji shrine` |
@@ -213,12 +233,13 @@ never pays for the extra round trip.
 2. Otherwise a **name search**; a title match there wins next.
 3. Otherwise a page within **250 m** may stand in as scenery — captioned `· nearby` so you
    know it is the surroundings, not the place.
-4. Otherwise nothing. A wrong photo is worse than no photo.
+4. Otherwise nothing. **A wrong photo is worse than no photo.**
 
 It requests a 1600px rendition rather than the original file, so you get a high-resolution
 image without pulling a 20 MB TIFF into IndexedDB, and it identifies itself with an
-`Api-User-Agent` header as Wikimedia asks of browser clients. The caption carries the article
-title and the lightbox links back to the article.
+`Api-User-Agent` header as Wikimedia asks of browser clients — on `api.php` only, since
+sending it to `upload.wikimedia.org` would turn the image GET into a preflight that CORS
+rejects. The caption carries the article title and the lightbox links back to the article.
 
 This runs in the background when a place is added from search, so adding a place never waits
 on the network. Toggle it in ⋯ → *Auto-photo new places*; the editor's **✨ Find a photo**
@@ -227,7 +248,7 @@ button runs the same lookup on demand.
 Photos are stored as blobs and rendered as a **justified grid**: `render.js` groups them into
 rows of at most three (four photos become 2 + 2 rather than 3 + 1) and gives each row the sum
 of its aspect ratios as a CSS `aspect-ratio`, and each photo a `flex-grow` share of that sum.
-Every row therefore fills the full width exactly and every photo in a row is exactly as tall
+Every row therefore fills the full width exactly, and every photo in a row is exactly as tall
 as its neighbours — no ragged bottoms, no empty columns, at any nesting level.
 
 Within a row the shares use the *square root* of each ratio, which pulls a panorama and a
@@ -296,7 +317,7 @@ css/
 js/
   app.js         wiring: header, search UI, timeline events, paste, resizing
   store.js       the trip document, mutations, persistence, day routes
-  render.js      timeline markup and travel-leg labels
+  render.js      timeline markup, justified galleries, travel-leg labels
   map.js         Leaflet layers, numbered pins, routes, lodging spine
   geo.js         merged place search (Nominatim + Photon + Wikipedia) and OSRM, cached
   photos.js      Wikipedia photo lookup
@@ -337,3 +358,7 @@ the photo-lookup selection rules (with `fetch` stubbed, so it stays deterministi
   not for bulk use; that is why only the focused day is routed.
 - **`prefers-reduced-motion`** is honoured; the theme is dark-only by design, and print
   switches back to ink-on-white.
+
+<div align="center">
+<sub>Map data © OpenStreetMap contributors · photos from Wikipedia · built with no framework at all</sub>
+</div>

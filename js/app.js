@@ -176,11 +176,15 @@ const addTarget = r =>
     ? (dayTarget() ? `Stay from ${fmtDate(dayTarget())}` : 'Add as accommodation')
     : (dayTarget() ? `Add to ${fmtDate(dayTarget())}` : 'Add to ideas');
 
+/* Context for the search: what the map is showing wins — panning to Japan is
+   how you say which "Minoo Park" you mean — and the trip's own places stand in
+   while the map is still zoomed out to the world. */
 function mapCenter() {
+  const view = map.viewCenter();
+  if (view) return view;
   const pts = [...Object.values(state.trip.items), ...Object.values(state.trip.stays)]
     .filter(p => Number.isFinite(p.lat));
-  if (!pts.length) return null;
-  return { lat: pts[0].lat, lng: pts[0].lng };
+  return pts.length ? { lat: pts[0].lat, lng: pts[0].lng } : null;
 }
 
 const showResults = html => { resultsEl.innerHTML = html; resultsEl.hidden = false; };

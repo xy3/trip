@@ -142,6 +142,15 @@ export function flyTo(p, zoom = 15) {
 export const fitAll = () => { fitPending = true; refresh({ fit: true }); };
 export const invalidate = () => map && map.invalidateSize();
 
+/* Where the user is currently looking. Place search leans on this to decide
+   between namesakes, so only answer once the view is tighter than continental —
+   a world view says nothing about which country is meant. */
+export function viewCenter() {
+  if (!map || map.getZoom() < 5) return null;
+  const c = map.getCenter();
+  return { lat: c.lat, lng: c.lng };
+}
+
 function highlightCard(id) {
   document.querySelectorAll('.card.active').forEach(el => el.classList.remove('active'));
   const el = document.querySelector(`.card[data-id="${id}"]`);

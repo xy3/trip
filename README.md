@@ -49,7 +49,8 @@ Any static file server works. `file://` does **not**, because the app is built f
 - Links and file attachments (tickets, PDFs) on any activity.
 
 **Search and map**
-- Place search through OpenStreetMap Nominatim. Click a result to add it, or **drag it onto
+- Place search across three sources at once (Nominatim, Photon, geotagged Wikipedia), ranked
+  together and biased toward whatever the map is showing. Click a result to add it, or **drag it onto
   a day**. Results recognised as hotels are added as *accommodation* rather than as a stop.
 - Click a day header to focus the map on that day; click again, or press **Whole trip**, to
   zoom back out.
@@ -161,6 +162,31 @@ the journey reads at a glance.
 
 Routing and geocoding results are cached per session; searches are debounced.
 
+### Place search
+
+One geocoder is not enough for trip planning. Nominatim matches names strictly, so a ryokan
+called *Ochiairo* or a park written 箕面 in OSM and "Minoo" by everyone else simply returns
+nothing. `searchPlaces` therefore asks three keyless sources in parallel and merges them:
+
+| Source | Good at |
+| --- | --- |
+| Nominatim | addresses, exact OSM names, and an `importance` score for prominence |
+| Photon | the same OSM data behind a fuzzy, typo-tolerant index — finds partial and transliterated names |
+| Wikipedia | geotagged articles, covering landmarks OSM knows only under their local name |
+
+A source that fails or rate-limits just contributes nothing; an error surfaces only if all
+three fail. Hits are deduped by position and name, and re-ranked on four signals:
+
+- **name match** — exact, prefix, or how many words of the query the name covers (with a
+  prefix-tolerant comparison, so "Minoo" matches "Minō")
+- **prominence** — Nominatim's `importance`, a bonus for having a Wikipedia article, and a
+  bonus for each extra source that independently found the same spot
+- **where the map is looking** — `map.viewCenter()`, once zoomed in past continental level,
+  falls back to the trip's own places. This is what decides between namesakes: with the map
+  over Osaka, "minoo park" returns Japan's Meiji-no-Mori Minō park first; over the whole
+  world, the park literally named "Minoo Park" in Iran wins
+- a small penalty for motorway junctions, bus stops and other non-destinations
+
 ### Photos
 
 `js/photos.js` finds one representative image for a place through the Wikipedia API:
@@ -215,7 +241,8 @@ public.
 | Service | Used for | Key required |
 |---|---|---|
 | OpenStreetMap tiles | The basemap (filtered dark to match the theme) | no |
-| Nominatim | Place search | no |
+| Nominatim | Place search, addresses and prominence | no |
+| Photon (komoot) | Fuzzy place search over the same OSM data | no |
 | OSRM demo server | Road routing for the focused day | no |
 | Wikipedia API | Automatic place photos | no |
 
@@ -254,7 +281,7 @@ js/
   store.js       the trip document, mutations, persistence, day routes
   render.js      timeline markup and travel-leg labels
   map.js         Leaflet layers, numbered pins, routes, lodging spine
-  geo.js         Nominatim + OSRM clients, with caching
+  geo.js         merged place search (Nominatim + Photon + Wikipedia) and OSRM, cached
   photos.js      Wikipedia photo lookup
   dnd.js         drag & drop: cards, stays, search results
   editor.js      activity/stay dialog, links, attachments

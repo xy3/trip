@@ -69,6 +69,15 @@ export function load() {
   return state.trip;
 }
 
+/* Nothing planned yet: used to decide whether a signed-in account's saved trip
+   can simply replace what is in this browser. */
+export function isEmptyTrip(t = state.trip) {
+  return !t.title
+    && !Object.keys(t.items || {}).length
+    && !Object.keys(t.stays || {}).length
+    && !Object.values(t.photos || {}).some(list => list?.length);
+}
+
 export function replaceTrip(trip, { readonly = false } = {}) {
   state.trip = migrate(trip);
   state.readonly = readonly;

@@ -4,13 +4,14 @@
 
 **A split-screen trip planner: a scrollable itinerary on the left, a live map on the right.**
 
-A single static site — no build step, no dependencies to install, no accounts, no server.
-Your trip lives in your own browser.
+A single static site — no build step, no dependencies to install, no account required.
+Your trip lives in your own browser. Sign in only if you want it on more than one computer.
 
 ![static site](https://img.shields.io/badge/static_site-no_build_step-7ab8ff?style=flat-square)
 ![dependencies](https://img.shields.io/badge/npm_dependencies-0-57c98a?style=flat-square)
 ![vanilla](https://img.shields.io/badge/vanilla-ES_modules-9d8bff?style=flat-square)
-![keyless](https://img.shields.io/badge/API_keys-none-e8c14a?style=flat-square)
+![keyless](https://img.shields.io/badge/map_API_keys-none-e8c14a?style=flat-square)
+![sync](https://img.shields.io/badge/sync-optional-ff7fb0?style=flat-square)
 
 <img src="docs/screenshot-trip.jpg" alt="The trip planner: itinerary on the left, map on the right" width="100%">
 
@@ -28,6 +29,13 @@ python3 -m http.server 8123     # then open http://localhost:8123
 Any static file server works — `npx serve`, `caddy file-server`, a GitHub Pages branch, an
 S3 bucket. `file://` does **not**, because the app is built from ES modules.
 
+Want your trips to follow you between computers? Run the bundled server instead — it serves
+the same static files *and* adds sign-in and sync. See [running the server](#running-the-server).
+
+```bash
+node server/main.js             # Node 22.5+, still no npm install
+```
+
 ## Table of contents
 
 - [What it does](#what-it-does)
@@ -35,6 +43,7 @@ S3 bucket. `file://` does **not**, because the app is built from ES modules.
   - [Data model](#data-model) · [Where your data lives](#where-your-data-lives) · [Day buckets](#day-buckets-and-the-date-range)
   - [Routing](#routing-how-a-day-is-drawn) · [Place search](#place-search) · [Photos](#photos)
   - [Share links](#share-links) · [External services](#external-services)
+- [Sign-in and sync](#sign-in-and-sync) · [Running the server](#running-the-server)
 - [Keyboard, mouse and drag targets](#keyboard-mouse-and-drag-targets)
 - [Project layout](#project-layout) · [Tests](#tests) · [Limits and trade-offs](#limits-and-trade-offs)
 
@@ -82,6 +91,17 @@ S3 bucket. `file://` does **not**, because the app is built from ES modules.
 - Click any photo for a full-screen lightbox with ←/→ and a per-image caption.
 
 <img src="docs/screenshot-lightbox.jpg" alt="The full-screen lightbox with a caption and a link back to the source" width="100%">
+
+### ☁ Sign in and sync — optional
+
+- Without a server, or before you sign in, **nothing about accounts is shown**. The app is a
+  local tool and stays one.
+- Sign in with Google and the trip — activities, stays, notes, costs and **photos** — is kept
+  in your account. Open the app on another computer, sign in, and it is there.
+- Edits sync in the background. Two devices editing at once is detected, never silently
+  overwritten: the second one is asked which copy to keep, and the other is not thrown away.
+
+<img src="docs/screenshot-signin.jpg" alt="The sign-in invitation in the account panel" width="49%"> <img src="docs/screenshot-account.jpg" alt="The account panel when signed in, showing sync status and photo storage" width="49%">
 
 ### 📤 Output
 
@@ -131,12 +151,14 @@ time — so no trip has ever shifted by a day because of a timezone.
 | The trip document | `localStorage` | Small, synchronous, survives reloads |
 | Photos and file attachments | IndexedDB, as blobs keyed by id | Binaries would blow the localStorage quota |
 | Split position, toggles | `localStorage` | UI preference, not trip data |
+| A copy of both, when signed in | SQLite on your server | So another computer can have them too |
 
 `js/db.js` is the blob store. The trip document only ever holds blob **ids**, so the two stay
 decoupled: `referencedBlobs()` collects every id the document still points at, and `db.gc()`
 deletes the rest on startup. Object URLs are cached per id and revoked when a photo is removed.
 
-**Nothing is uploaded anywhere.**
+**Nothing is uploaded anywhere** unless you sign in — and then only to the server you are
+running yourself.
 
 ### Day buckets and the date range
 
@@ -257,6 +279,90 @@ absorbs the small difference. A photo alone in its row keeps its true shape. Rat
 measured the first time a photo paints and cached on the photo record (`r`), then the row is
 rebalanced in place — no re-render, so the scroll position never jumps.
 
+### Sign-in and sync
+
+`js/sync.js` is inert until it finds a server. On boot it asks for `/api/me`; a static host
+answers with a 404 or an HTML error page, `probe()` gives up, and the account button never
+appears. That keeps the no-server deployment exactly as it was.
+
+With the server behind it, the model is deliberately small:
+
+- **The whole trip document is one value**, written wholesale. No field-level merging, no
+  operational transforms — a trip is a few kilobytes of JSON and a person edits one at a time.
+- **The server hands out a `rev` on every save.** A push carries the rev it was based on. If
+  they disagree the server answers `409` with the copy that won, and nothing is overwritten.
+- **Blobs are content-addressed** by the id already in the document, so a photo uploads once
+  and is never rewritten. `POST /api/blobs/missing` diffs the two sides; only the gap moves.
+
+Blobs go up *before* the document that references them and come down *after* it, so the two
+stores are never inconsistent in a way a reader would notice.
+
+What happens when the copies diverge:
+
+| Situation | What the app does |
+|---|---|
+| Local unchanged since the last push, server ahead | Takes the server's copy silently |
+| Local edited, server ahead | Shows the conflict banner and asks. Both copies survive |
+| Signed in on a fresh browser | Pulls the newest trip in the account, photos and all |
+| Signed in with a trip already in progress | Offers to open the saved one, keeping this one too |
+
+Pushes are debounced by about a second and a half; the app also catches up when the tab
+regains focus, and every two minutes while it is open. Signing out leaves everything in the
+browser exactly as it was — the local copy is the original, not a cache.
+
+### Running the server
+
+`server/` is a single Node process with **no npm dependencies**: `node:sqlite` for storage,
+`node:http` for serving, `node:crypto` for tokens. It serves the static site too, so it is the
+whole deployment.
+
+```bash
+cp server/.env.example server/.env      # fill in the Google credentials
+node server/main.js
+```
+
+To get the credentials: [Google Cloud console](https://console.cloud.google.com/) → *APIs &
+Services* → *Credentials* → *Create OAuth client ID* → **Web application**, and add
+`{BASE_URL}/auth/google/callback` as an authorised redirect URI. Paste the client ID and
+secret into `server/.env` along with the `BASE_URL` the browser will use.
+
+With no credentials configured the server still runs and still serves the app — it just does
+not offer sign-in.
+
+| Setting | Default | |
+|---|---|---|
+| `BASE_URL` | `http://localhost:8123` | Public origin; must match the OAuth redirect URI |
+| `PORT` / `HOST` | `8123` / `0.0.0.0` | |
+| `DB_FILE` | `server/data/trip.db` | Created on first run, with `-wal`/`-shm` beside it |
+| `SESSION_DAYS` | `90` | Cookie and server-side session lifetime |
+| `MAX_BLOB_BYTES` | 25 MB | Rejected above this |
+| `QUOTA_BYTES` | 750 MB | Per account, across all photos and attachments |
+
+Four tables: `users`, `sessions`, `trips` (one row per trip per user), `blobs`. Photo bytes
+live in SQLite rather than on disk — one file to back up, and photos are megabytes, not
+gigabytes. Blobs no longer named by any of your trips are swept on every save.
+
+Notes on the security model, since it is small enough to state in full:
+
+- Sessions are random 32-byte tokens in an `HttpOnly`, `SameSite=Lax`, `Secure`-when-https
+  cookie. Only their SHA-256 is stored, so the database never holds a usable session.
+- Google's flow runs with **PKCE** plus a single-use `state` cookie tying the callback to the
+  browser that started it.
+- Every state-changing request must carry a same-origin `Origin` header, which with
+  `SameSite=Lax` closes cross-site writes.
+- Every query is scoped by `user_id`; the server never serves another account's blob.
+- The server refuses to serve its own `server/` directory, so `.env` is not reachable.
+
+Put it behind a TLS terminator (Caddy, nginx, a Cloudflare tunnel) and set `BASE_URL` to the
+public https origin. A systemd unit is four lines:
+
+```ini
+[Service]
+WorkingDirectory=/srv/trip
+ExecStart=/usr/bin/node server/main.js
+Restart=always
+```
+
 ### Share links
 
 `js/share.js` serialises the trip, strips the binaries, deflate-compresses it with
@@ -325,11 +431,21 @@ js/
   editor.js      activity/stay dialog, links, attachments
   lightbox.js    full-screen gallery
   share.js       share links, export/import bundles
+  sync.js        optional cloud sync: probe, pull, push, blobs, conflicts
   db.js          IndexedDB blob store
   categories.js  categories, colours, OSM type → category guessing
   util.js        dates, money, distance, small helpers
+server/          optional; the app runs fine without any of this
+  main.js        http server: static site, /api, /auth — no npm dependencies
+  db.js          node:sqlite schema and queries
+  auth.js        Google OAuth (authorization code + PKCE)
+  .env.example   configuration template
 vendor/          Leaflet 1.9.4 (vendored, no CDN)
-test/core.test.mjs
+docs/            README screenshots
+test/
+  core.test.mjs    the trip document: buckets, routes, costs, share links
+  server.test.mjs  the API over real HTTP against a temporary SQLite database
+  sync.e2e.mjs     two browsers, one account (needs playwright-core)
 ```
 
 The modules form a one-way graph: `store` owns state and notifies subscribers, `render` and
@@ -340,22 +456,41 @@ enough for a trip and removes a whole class of stale-view bugs.
 ## Tests
 
 ```bash
-node test/core.test.mjs
+node test/core.test.mjs      # the trip document — no browser, no network
+node test/server.test.mjs    # the API — real HTTP, real SQLite, stubbed Google
+node test/sync.e2e.mjs       # two browsers sharing one account (see below)
 ```
 
-Covers the parts worth protecting, with no browser and no network: day-bucket generation,
-move/reorder without loss or duplication, date clamping, stays spanning days, cost rollups,
-hotel promotion and night arithmetic, all four day-route shapes, the share-link round-trip, and
-the photo-lookup selection rules (with `fetch` stubbed, so it stays deterministic).
+**`core.test.mjs`** covers day-bucket generation, move/reorder without loss or duplication,
+date clamping, stays spanning days, cost rollups, hotel promotion and night arithmetic, all
+four day-route shapes, the share-link round-trip, and the photo-lookup selection rules (with
+`fetch` stubbed, so it stays deterministic).
+
+**`server.test.mjs`** starts the real server on a temporary database and exercises it over
+HTTP: the OAuth round trip and its rejection of a bad `state`, sessions, rev conflicts,
+per-account isolation, blob upload/download and the unreferenced-blob sweep, that a
+cross-site write is refused even with a valid cookie, and that `server/` is never served.
+
+**`sync.e2e.mjs`** drives two real browser contexts against that server — plan a trip, sign
+in, sign in again elsewhere, and check the trip *and its photo bytes* arrive; then edit on
+both at once and check the fork is caught and resolvable either way. It needs a browser, which
+the repo does not depend on, so it reports itself as skipped unless you install one:
+
+```bash
+npm i playwright-core && npx playwright install chromium
+```
 
 ## Limits and trade-offs
 
-- **One trip at a time** in a browser. Export/import to keep more.
+- **One trip at a time** in a browser. Export/import to keep more. (The server does keep
+  every trip you have saved; the app just opens the most recent.)
 - **Share links can get long.** A large itinerary makes a large URL; some chat apps truncate.
 - **Photos are local.** They are in your browser's IndexedDB, not in the share link. Clearing
   site data clears them — export first.
 - **The routing and search services are public demo endpoints.** Fine for planning a trip,
   not for bulk use; that is why only the focused day is routed.
+- **Sync is last-writer-wins at the document level**, with a conflict prompt rather than a
+  merge. Right for one person on two computers; not a collaborative editor.
 - **`prefers-reduced-motion`** is honoured; the theme is dark-only by design, and print
   switches back to ink-on-white.
 

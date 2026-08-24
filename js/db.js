@@ -22,9 +22,10 @@ async function tx(mode, fn) {
   return new Promise((res, rej) => {
     const t = db.transaction(STORE, mode);
     const store = t.objectStore(STORE);
-    let out;
-    out = fn(store);
-    t.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
+    const out = fn(store);
+    // a read that found nothing still resolves to an IDBRequest whose result is
+    // undefined — unwrap it either way, or "no such blob" comes back truthy
+    t.oncomplete = () => res(out instanceof IDBRequest ? out.result : out);
     t.onerror = () => rej(t.error);
   });
 }

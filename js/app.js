@@ -11,6 +11,7 @@ import { openLightbox } from './lightbox.js';
 import { buildShareLink, tripFromHash, exportBundle, importBundle } from './share.js';
 import * as db from './db.js';
 import { findPhoto } from './photos.js';
+import * as cloud from './sync.js';
 
 /* ---------------- boot ---------------- */
 async function boot() {
@@ -30,9 +31,15 @@ async function boot() {
   db.gc(store.referencedBlobs()).catch(() => {});
 
   store.subscribe(reason => {
+    if (reason === 'sync') return paintAccount();
     syncHeader();
     redraw({ fit: reason === 'replace' });
+    paintAccount();
   });
+
+  // does this deployment have a server behind it? if not, sync stays invisible
+  cloud.probe().then(paintAccount);
+  reportSignIn();
 }
 
 function syncHeader() {
@@ -446,4 +453,107 @@ const savedSplit = localStorage.getItem('trip-planner:split');
 if (savedSplit) document.documentElement.style.setProperty('--left-w', savedSplit);
 
 window.addEventListener('resize', () => map.invalidate());
+
+
+/* ---------------- account & cloud sync ---------------- */
+const GOOGLE_MARK = `<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45 24.5c0-1.6-.1-2.7-.4-3.9H24v7.1h12c-.2 1.8-1.5 4.6-4.4 6.4l-.1.3 6.4 4.9.4.1C42.4 35.6 45 30.5 45 24.5z"/><path fill="#34A853" d="M24 46c5.8 0 10.7-1.9 14.3-5.2l-6.8-5.3c-1.8 1.3-4.3 2.2-7.5 2.2-5.7 0-10.6-3.8-12.3-9l-.3.1-6.6 5.1-.1.3C8.3 41.1 15.6 46 24 46z"/><path fill="#FBBC05" d="M11.7 28.7c-.5-1.4-.7-2.8-.7-4.2s.3-2.9.7-4.2v-.4l-6.7-5.2-.2.1A22 22 0 0 0 2 24.5c0 3.5.9 6.9 2.8 9.7l6.9-5.5z"/><path fill="#EA4335" d="M24 11.1c4 0 6.8 1.7 8.3 3.2l6.1-5.9C34.7 4.9 29.8 3 24 3 15.6 3 8.3 7.9 4.8 14.8l6.9 5.5c1.7-5.2 6.6-9.2 12.3-9.2z"/></svg>`;
+
+const accountBtn = $('#btnAccount');
+const accountPanel = $('#accountPanel');
+
+const fmtBytes = n => (n > 1 << 30 ? `${(n / (1 << 30)).toFixed(1)} GB` : `${Math.round(n / (1 << 20))} MB`);
+const STATE_TEXT = {
+  idle: 'Everything is saved to your account',
+  syncing: 'Saving…',
+  error: 'Could not sync',
+  conflict: 'Waiting for you to choose a copy',
+  'signed-out': 'Not signed in',
+};
+
+function paintAccount() {
+  const s = cloud.sync;
+  accountBtn.hidden = !s.available || state.readonly;
+  if (accountBtn.hidden) { accountPanel.hidden = true; return paintConflict(); }
+
+  const signedIn = !!s.user;
+  $('#accountLabel').textContent = signedIn ? (s.user.name || 'Account').split(' ')[0] : 'Sign in';
+  $('#accountDot').className = `dot ${signedIn ? s.status : ''}`;
+  accountBtn.title = signedIn ? (s.message || STATE_TEXT[s.status] || '') : 'Sign in to save your trip';
+
+  if (!accountPanel.hidden) accountPanel.innerHTML = panelHTML(s);
+  paintConflict();
+}
+
+function panelHTML(s) {
+  if (!s.user) {
+    return `<p>Your trip is saved in this browser. Sign in to keep it in your account and pick it
+      up on another computer — photos included.</p>
+      ${s.providers.map(p => `<button class="btn btn-provider" data-signin="${p.id}">
+        ${p.id === 'google' ? GOOGLE_MARK : ''}<span>Continue with ${esc(p.label)}</span></button>`).join('')
+        || '<p class="state">No sign-in provider is configured on this server.</p>'}`;
+  }
+  const q = s.quota;
+  return `
+    <div class="who">
+      ${s.user.avatar ? `<img src="${esc(s.user.avatar)}" alt="">` : ''}
+      <div><b>${esc(s.user.name || 'Signed in')}</b><span>${esc(s.user.email || '')}</span></div>
+    </div>
+    <div class="state ${s.status === 'error' ? 'error' : ''}">
+      <span class="dot ${s.status}"></span>${esc(s.message || STATE_TEXT[s.status] || '')}
+    </div>
+    ${q ? `<div class="meter"><i style="width:${Math.min(100, (q.used / q.total) * 100).toFixed(1)}%"></i></div>
+      <p style="margin:0 0 10px">${fmtBytes(q.used)} of ${fmtBytes(q.total)} used for photos</p>` : ''}
+    <hr>
+    <div class="row">
+      <button class="btn btn-sm" data-act="syncnow">Sync now</button>
+      <button class="btn btn-sm danger" data-act="signout">Sign out</button>
+    </div>`;
+}
+
+accountBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  accountPanel.hidden = !accountPanel.hidden;
+  if (!accountPanel.hidden) accountPanel.innerHTML = panelHTML(cloud.sync);
+});
+accountPanel.addEventListener('click', async e => {
+  const provider = e.target.closest('[data-signin]')?.dataset.signin;
+  if (provider) return cloud.signIn(provider);
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'signout') { accountPanel.hidden = true; await cloud.signOut(); toast('Signed out — this trip stays in this browser'); }
+  if (act === 'syncnow') await cloud.syncNow();
+  paintAccount();
+});
+document.addEventListener('click', e => {
+  if (!e.target.closest('#accountPanel, #btnAccount')) accountPanel.hidden = true;
+});
+
+/* the fork: this browser and the account disagree about the same trip */
+const conflictBanner = $('#conflictBanner');
+function paintConflict() {
+  const c = cloud.sync.conflict;
+  conflictBanner.hidden = !c;
+  if (c) {
+    $('#conflictTitle').textContent = c.other
+      ? 'This account already has a saved trip.'
+      : 'This trip was also changed on another device.';
+    $('#conflictSub').textContent = c.other
+      ? `Saved ${fmtDate(new Date(c.updatedAt).toISOString().slice(0, 10))} · ${c.remote.title || 'Untitled trip'}`
+      : 'Choose which copy to keep — the other is not deleted from your account.';
+    $('#btnKeepRemote').textContent = c.other ? 'Open the saved trip' : 'Use the saved copy';
+  }
+  document.body.classList.toggle('has-banner', !conflictBanner.hidden || !$('#readonlyBanner').hidden);
+  map.invalidate();
+}
+$('#btnKeepRemote').addEventListener('click', () => cloud.resolveConflict('remote'));
+$('#btnKeepLocal').addEventListener('click', () => cloud.resolveConflict('local'));
+
+/* the OAuth round trip comes back to /#signed-in or /#sign-in-error=… */
+function reportSignIn() {
+  const hash = location.hash;
+  if (!/^#(signed-in|sign-in-error)/.test(hash)) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  const err = /#sign-in-error=(.*)$/.exec(hash);
+  toast(err ? `Sign-in failed: ${decodeURIComponent(err[1])}` : 'Signed in — your trip is saved to your account');
+}
+
 boot();

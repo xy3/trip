@@ -27,6 +27,10 @@
   <div class="totals" id="tripTotal" title="Total planned cost"></div>
 
   <div class="topbar-actions">
+    <button id="btnAccount" class="btn account" title="Save your trip to your account" hidden>
+      <span id="accountDot" class="dot"></span><span id="accountLabel">Sign in</span>
+    </button>
+    <div id="accountPanel" class="menu account-panel" hidden></div>
     <button id="btnPrint" class="btn" title="Print or save as PDF">Print</button>
     <button id="btnShare" class="btn" title="Create a read-only share link">Share</button>
     <button id="btnMenu" class="btn btn-icon" title="More" aria-haspopup="true">⋯</button>
@@ -39,6 +43,13 @@
     </div>
   </div>
 </header>
+
+<div id="conflictBanner" class="banner banner-warn" hidden>
+  <strong id="conflictTitle">This trip was also changed on another device.</strong>
+  <span id="conflictSub"></span>
+  <button id="btnKeepRemote" class="btn btn-sm">Use the saved copy</button>
+  <button id="btnKeepLocal" class="btn btn-sm">Keep this one</button>
+</div>
 
 <div id="readonlyBanner" class="banner" hidden>
   <strong>Read-only view.</strong> <span>You are viewing a shared itinerary.</span>

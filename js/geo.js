@@ -32,7 +32,45 @@ const tokens = s => strip(s).split(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/).filte
 /* "Minoo" should find "Minō" (a macron survives the accent strip as "Mino"),
    so a word also counts as matched when one spelling prefixes the other. */
 const hasWord = (words, t) =>
-  words.some(w => w === t || (t.length > 3 && w.length > 3 && (w.startsWith(t) || t.startsWith(w))));
+  words.some(w => w === t ||
+    (Math.min(w.length, t.length) > 2 && (w.startsWith(t) || t.startsWith(w))));
+
+/* Japanese place names carry their category as a suffix, and OSM usually
+   stores the English generic instead: the temple you would search for as
+   "Gioji" is tagged "Giō Temple", Kiyomizu-dera is "Kiyomizu Temple". No
+   geocoder bridges that, so when a search comes up empty we split the suffix
+   off and try again with the English word. */
+const SUFFIX = [
+  ['jinja', 'shrine'], ['jingu', 'shrine'], ['taisha', 'shrine'],
+  ['dera', 'temple'], ['tera', 'temple'], ['ji', 'temple'],
+  ['koen', 'park'], ['eki', 'station'], ['jo', 'castle'],
+];
+function relaxed(q) {
+  const words = strip(q).split(/\s+/).filter(Boolean);
+  const generic = new Map(SUFFIX);
+
+  // "meiji jingu" → "meiji shrine": the category is already its own word
+  if (words.some(w => generic.has(w))) {
+    return words.map(w => generic.get(w) || w).join(' ');
+  }
+  // "gioji temple" → "gio temple", "kiyomizudera" → "kiyomizu temple"
+  let changed = false;
+  const out = [];
+  for (const w of words) {
+    const hit = w.length >= 5 && SUFFIX.find(([suf]) => w.endsWith(suf) && w.length - suf.length >= 3);
+    if (!hit) { out.push(w); continue; }
+    changed = true;
+    out.push(w.slice(0, -hit[0].length));
+    if (!words.includes(hit[1])) out.push(hit[1]);
+  }
+  return changed ? out.join(' ') : null;
+}
+
+/* Did anything actually answer every word of the query? */
+const answered = (hits, q) => {
+  const want = tokens(q);
+  return hits.some(h => want.every(t => hasWord(tokens(h.name), t)));
+};
 
 export async function searchPlaces(query, { near = null, limit = 8, signal } = {}) {
   const q = query.trim();
@@ -49,7 +87,19 @@ export async function searchPlaces(query, { near = null, limit = 8, signal } = {
   // only surface an error if every source failed — one flaky endpoint is fine
   if (!hits.length && settled.every(s => s.status === 'rejected')) throw settled[0].reason;
 
-  const out = dedupe(hits.map(h => ({ ...h, score: score(h, q, near) })))
+  // nothing matched the whole query: try the loosened spelling before giving up
+  const alt = answered(hits, q) ? null : relaxed(q);
+  if (alt) {
+    const retry = await Promise.allSettled([
+      fromNominatim(alt, near, signal),
+      fromPhoton(alt, near, signal),
+    ]);
+    for (const r of retry) {
+      if (r.status === 'fulfilled') hits.push(...r.value.map(h => ({ ...h, q: alt })));
+    }
+  }
+
+  const out = dedupe(hits.map(h => ({ ...h, score: score(h, h.q || q, near) })))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
   searchCache.set(key, out);

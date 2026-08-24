@@ -187,6 +187,23 @@ three fail. Hits are deduped by position and name, and re-ranked on four signals
   world, the park literally named "Minoo Park" in Iran wins
 - a small penalty for motorway junctions, bus stops and other non-destinations
 
+If nothing matches every word of the query, one relaxed retry goes out. Japanese place
+names carry their category as a suffix and OSM usually stores the English generic instead,
+so *Gioji* — tagged `Giō Temple`, with no Wikipedia article at all — is invisible to all
+three sources as typed. The retry splits the suffix off and substitutes the English word:
+
+| Typed | Retried as |
+| --- | --- |
+| `gioji temple`, `gioji` | `gio temple` |
+| `kiyomizudera` | `kiyomizu temple` |
+| `meiji jingu` | `meiji shrine` |
+| `fushimi inari taisha` | `fushimi inari shrine` |
+| `osaka jo` | `osaka castle` |
+| `ueno koen` | `ueno park` |
+
+Those hits are scored against the retried spelling, and a query that already found something
+never pays for the extra round trip.
+
 ### Photos
 
 `js/photos.js` finds one representative image for a place through the Wikipedia API:

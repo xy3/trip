@@ -88,7 +88,7 @@
   <form method="dialog" id="editorForm">
     <header class="dialog-head">
       <h2 id="editorTitle">Edit</h2>
-      <button value="cancel" class="btn btn-icon" aria-label="Close">✕</button>
+      <button value="cancel" formnovalidate class="btn btn-icon" aria-label="Close">✕</button>
     </header>
     <div class="dialog-body">
       <label class="field">Name<input name="name" required></label>
@@ -133,7 +133,7 @@
     <footer class="dialog-foot">
       <button type="button" id="btnDeleteItem" class="btn danger">Delete</button>
       <span class="spacer"></span>
-      <button value="cancel" class="btn">Cancel</button>
+      <button value="cancel" formnovalidate class="btn">Cancel</button>
       <button value="save" class="btn btn-primary">Save</button>
     </footer>
   </form>
@@ -144,7 +144,7 @@
   <form method="dialog" id="groupForm">
     <header class="dialog-head">
       <h2 id="groupEditorTitle">Group days</h2>
-      <button value="cancel" class="btn btn-icon" aria-label="Close">✕</button>
+      <button value="cancel" formnovalidate class="btn btn-icon" aria-label="Close">✕</button>
     </header>
     <div class="dialog-body">
       <label class="field">Title<input name="title" placeholder="e.g. Tokyo" required></label>
@@ -160,7 +160,7 @@
     <footer class="dialog-foot">
       <button type="button" id="btnDeleteGroup" class="btn danger">Delete</button>
       <span class="spacer"></span>
-      <button value="cancel" class="btn">Cancel</button>
+      <button value="cancel" formnovalidate class="btn">Cancel</button>
       <button value="save" class="btn btn-primary">Save</button>
     </footer>
   </form>

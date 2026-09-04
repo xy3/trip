@@ -163,7 +163,8 @@ const runSearch = debounce(async () => {
     const near = mapCenter();
     results = (await searchPlaces(q, { near, signal: searchAbort.signal }))
       .map(r => ({ ...r, category: guessCategory(r) }));
-    if (!results.length) return showResults('<div class="res-empty">Nothing found. Try a more specific name or add the place manually.</div>');
+    if (!results.length) return showResults(`<div class="res-empty">Nothing found for “${esc(q)}”.
+      <button type="button" class="btn btn-sm" data-add-manual>Add it manually</button></div>`);
     showResults(results.map((r, i) => `
       <div class="res" data-res="${i}" draggable="true" title="Drag onto a day, or click to add">
         <div>
@@ -213,6 +214,15 @@ resultsEl.addEventListener('dragstart', e => {
 });
 
 resultsEl.addEventListener('click', e => {
+  if (e.target.closest('[data-add-manual]')) {
+    const bucket = dayTarget() || UNSCHEDULED;
+    const item = store.addItem({ name: searchInput.value.trim() }, bucket);
+    hideResults();
+    searchInput.value = '';
+    openEditor(item.id);
+    return;
+  }
+
   const el = e.target.closest('[data-res]');
   if (!el) return;
   const r = results[Number(el.dataset.res)];
@@ -284,8 +294,14 @@ timeline.addEventListener('click', async e => {
 
   const addTo = hit('data-add');
   if (addTo) {
-    const item = store.addItem({ name: '' }, addTo);
-    return openEditor(item.id);
+    // hand off to the search bar instead of a blank form — searching gets the
+    // address, coordinates and category for free; typing them by hand is the
+    // fallback, offered from the search box itself when nothing turns up.
+    setFocusDay(addTo);
+    searchInput.focus();
+    searchInput.select();
+    searchInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
   }
 
   const stayFor = hit('data-add-stay');
@@ -335,7 +351,12 @@ timeline.addEventListener('dblclick', e => {
 });
 
 function focusBucket(bucket) {
-  state.focusDay = state.focusDay === bucket ? null : bucket;
+  setFocusDay(state.focusDay === bucket ? null : bucket);
+}
+
+function setFocusDay(bucket) {
+  if (state.focusDay === bucket) return;
+  state.focusDay = bucket;
   $('.tab[data-view="all"]').classList.toggle('active', !state.focusDay);
   redraw({ fit: true });
 }

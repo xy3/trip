@@ -1,4 +1,4 @@
-import { state, mapPlaces, dayRoute, staySpine, days, UNSCHEDULED } from './store.js';
+import { state, mapPlaces, dayRoute, staySpine, days, UNSCHEDULED, toggleCollapsed } from './store.js';
 import { catColor } from './categories.js';
 import { routeFor } from './geo.js';
 import { $, esc, fmtKm, fmtDur, haversine } from './util.js';
@@ -57,6 +57,7 @@ export function refresh({ fit = false } = {}) {
   stays.forEach(s => {
     L.marker([s.lat, s.lng], { icon: pinIcon('🛏', catColor('lodging'), true) })
       .bindPopup(popupFor(s, `${s.checkIn} → ${s.checkOut}`))
+      .on('click', () => { state.activeItem = s.id; highlightCard(s.id); })
       .addTo(layer);
     bounds.push([s.lat, s.lng]);
   });
@@ -64,7 +65,9 @@ export function refresh({ fit = false } = {}) {
   loose.forEach(p => {
     L.circleMarker([p.lat, p.lng], {
       radius: 6, color: '#fff', weight: 2, fillColor: catColor(p.category), fillOpacity: .9,
-    }).bindPopup(popupFor(p, 'unscheduled')).addTo(layer);
+    }).bindPopup(popupFor(p, 'unscheduled'))
+      .on('click', () => { state.activeItem = p.id; highlightCard(p.id); })
+      .addTo(layer);
     bounds.push([p.lat, p.lng]);
   });
 
@@ -151,9 +154,15 @@ export function viewCenter() {
   return { lat: c.lat, lng: c.lng };
 }
 
+/* Cards live in the sidebar for stops, a `.stay` row for accommodation — find
+   whichever one matches. If it's inside a collapsed day, open that day first;
+   scrollIntoView on a display:none element does nothing. */
 function highlightCard(id) {
-  document.querySelectorAll('.card.active').forEach(el => el.classList.remove('active'));
-  const el = document.querySelector(`.card[data-id="${id}"]`);
+  document.querySelectorAll('.card.active, .stay.active').forEach(el => el.classList.remove('active'));
+  const find = () => document.querySelector(`.card[data-id="${id}"]`) || document.querySelector(`.stay-block[data-id="${id}"] .stay`);
+  let el = find();
+  const block = el?.closest('.block.collapsed');
+  if (block) { toggleCollapsed(block.dataset.bucket); el = find(); }
   if (el) { el.classList.add('active'); el.scrollIntoView({ block: 'nearest' }); }
 }
 

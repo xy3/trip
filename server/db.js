@@ -58,6 +58,18 @@ export function openDB(file) {
       created_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, id)
     );
+
+    -- a public, read-only alias for one (user, trip) pair. The token is the
+    -- whole access control: anyone holding it can read that trip and its
+    -- photos with no session at all, so it rides in the share link instead of
+    -- the trip id. One token per trip — sharing again reuses it.
+    CREATE TABLE IF NOT EXISTS shares (
+      token      TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      trip_id    TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (user_id, trip_id)
+    );
   `);
   return wrap(db);
 }
@@ -86,6 +98,11 @@ function wrap(db) {
                         ON CONFLICT (user_id, trip_id) DO UPDATE SET doc = excluded.doc,
                         rev = excluded.rev, updated_at = excluded.updated_at`);
   const deleteTrip = q('DELETE FROM trips WHERE user_id = ? AND trip_id = ?');
+
+  const findShareByTrip = q('SELECT token FROM shares WHERE user_id = ? AND trip_id = ?');
+  const insertShare = q('INSERT INTO shares (token, user_id, trip_id, created_at) VALUES (?, ?, ?, ?)');
+  const findShareByToken = q('SELECT * FROM shares WHERE token = ?');
+  const deleteSharesForTrip = q('DELETE FROM shares WHERE user_id = ? AND trip_id = ?');
 
   const putBlob = q(`INSERT INTO blobs (user_id, id, type, size, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)
                      ON CONFLICT (user_id, id) DO NOTHING`);
@@ -126,7 +143,21 @@ function wrap(db) {
       upsertTrip.run(userId, tripId, doc, rev, at);
       return { rev, updatedAt: at };
     },
-    deleteTrip: (userId, tripId) => deleteTrip.run(userId, tripId),
+    deleteTrip(userId, tripId) {
+      deleteTrip.run(userId, tripId);
+      deleteSharesForTrip.run(userId, tripId);
+    },
+
+    /* Stable per-trip token: sharing the same trip twice hands back the same
+       link rather than minting (and leaving live) a new one each time. */
+    shareToken(userId, tripId) {
+      const existing = findShareByTrip.get(userId, tripId);
+      if (existing) return existing.token;
+      const t = token(9);   // short — this one rides in a URL people actually share
+      insertShare.run(t, userId, tripId, now());
+      return t;
+    },
+    shareByToken: t => findShareByToken.get(t) || null,
 
     putBlob: (userId, id, type, bytes) =>
       putBlob.run(userId, id, type, bytes.length, bytes, now()),

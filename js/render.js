@@ -298,7 +298,7 @@ function gallery(bucket) {
     return `<div class="grow" style="--ar:${sum.toFixed(4)}">${row.map((p, j) => {
       index++;
       return `<figure data-photo="${p.id}" data-index="${index}" style="--r:${share(rs[j], sum)}">
-        <img alt="${esc(p.caption || '')}" data-blob="${p.id}">
+        <img alt="${esc(p.caption || '')}" data-blob="${p.id}"${p.url ? ` src="${esc(p.url)}"` : ''}>
         ${p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''}
         <button class="photo-del" data-photo-del="${p.id}" data-bucket="${bucket}" title="Remove">✕</button>
       </figure>`;
@@ -309,6 +309,10 @@ function gallery(bucket) {
 
 function hydratePhotos(root) {
   for (const img of root.querySelectorAll('img[data-blob]')) {
+    if (img.getAttribute('src')) {           // a shared trip: the photo has a real server URL already
+      img.addEventListener('load', () => measure(img), { once: true });
+      continue;
+    }
     db.blobURL(img.dataset.blob).then(url => {
       if (!url) return;
       img.addEventListener('load', () => measure(img), { once: true });

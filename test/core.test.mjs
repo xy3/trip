@@ -181,15 +181,16 @@ assert.equal(JSON.stringify(state.trip), before);
 /* --- share link round-trip --- */
 const share = await import('../js/share.js');
 globalThis.location = { href: 'https://example.com/trip/', hash: '' };
-const url = await share.buildShareLink();
+const { url, photosIncluded } = await share.buildShareLink();
 assert.match(url, /^https:\/\/example\.com\/trip\/#t=z/);
+assert.equal(photosIncluded, false, 'no account in this test, so the link falls back to the fragment form');
 const decoded = await share.tripFromHash(new URL(url).hash);
 assert.equal(decoded.title, state.trip.title);
 assert.equal(Object.keys(decoded.items).length, Object.keys(state.trip.items).length);
 assert.ok(state.trip.order['2026-10-01'].length, 'sanity: the day we compare is populated');
 assert.deepEqual(decoded.order['2026-10-01'], state.trip.order['2026-10-01']);
 assert.equal(Object.keys(decoded.stays).length, 2, 'stays travel in the share link');
-assert.deepEqual(decoded.photos, {}, 'share links carry no binaries');
+assert.deepEqual(decoded.photos, {}, 'no photos were added in this test, so none travel');
 assert.equal(await share.tripFromHash('#nope'), null);
 
 /* --- day groups: label, colour, and clip a run of days --- */

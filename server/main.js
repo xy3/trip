@@ -15,9 +15,10 @@
    see server/.env.example. */
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, extname, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { openDB } from './db.js';
 import { PROVIDERS, configured, startURL, exchange } from './auth.js';
 
@@ -131,6 +132,20 @@ async function placesTextSearch(q, near, limit) {
   }));
 }
 
+/* File attachments (tickets, PDFs) stay out of a share the same way they stay
+   out of the old fragment-encoded link — only photos are worth the extra
+   surface. Each photo gets a real URL in place of its bare id. */
+function publicTrip(trip, token) {
+  const t = JSON.parse(JSON.stringify(trip));
+  for (const o of [...Object.values(t.items || {}), ...Object.values(t.stays || {})]) o.files = [];
+  for (const list of Object.values(t.photos || {})) for (const p of list) p.url = `/api/shares/${token}/photos/${p.id}`;
+  return t;
+}
+
+/* Only photo ids — never attachment ids, even though both live in the same
+   blob table — may be fetched through a share token. */
+const photoIds = trip => new Set(Object.values(trip.photos || {}).flatMap(list => list.map(p => p.id)));
+
 /* ---------------- routes ---------------- */
 async function api(req, res, url) {
   const path = url.pathname;
@@ -166,6 +181,31 @@ async function api(req, res, url) {
       console.error('places search failed:', e.message);
       return json(res, 502, { error: 'place search is temporarily unavailable' });
     }
+  }
+
+  /* Public, read-only trip shares: no sign-in, because the person opening the
+     link never has an account here. The token is the whole access control
+     (see the `shares` table in server/db.js) — anyone holding it can read
+     that one trip and its photos, nothing else. Photos are ordinary image
+     responses at their own URL, which is the point: the share link itself
+     never has to carry them. */
+  const shareMatch = /^\/api\/shares\/([A-Za-z0-9_-]{1,24})(?:\/photos\/([A-Za-z0-9_-]{1,64}))?$/.exec(path);
+  if (shareMatch && method === 'GET') {
+    const [, token, photoId] = shareMatch;
+    const share = db.shareByToken(token);
+    const row = share && db.getTrip(share.user_id, share.trip_id);
+    if (!row) return json(res, 404, { error: 'no such share' });
+    const trip = JSON.parse(row.doc);
+
+    if (!photoId) return json(res, 200, { trip: publicTrip(trip, token) });
+
+    // a token must only ever unlock this trip's own photos — never attachments
+    if (!photoIds(trip).has(photoId)) return json(res, 404, { error: 'no such photo' });
+    const blob = db.getBlob(share.user_id, photoId);
+    if (!blob) return json(res, 404, { error: 'no such photo' });
+    res.writeHead(200, { 'Content-Type': blob.type, 'Content-Length': blob.bytes.length,
+      'Cache-Control': 'public, max-age=31536000, immutable' });
+    return res.end(Buffer.from(blob.bytes));
   }
 
   if (path === '/api/signout' && method === 'POST') {
@@ -211,6 +251,14 @@ async function api(req, res, url) {
     const saved = db.saveTrip(me.id, trip.id, JSON.stringify(trip), (current?.rev || 0) + 1);
     db.sweepBlobs(me.id);
     return json(res, 200, saved);
+  }
+
+  if (path === '/api/share' && method === 'POST') {
+    let payload;
+    try { payload = JSON.parse((await body(req, 1024)).toString('utf8')); }
+    catch { return json(res, 400, { error: 'bad request' }); }
+    if (!payload?.tripId || !db.getTrip(me.id, payload.tripId)) return json(res, 404, { error: 'no such trip' });
+    return json(res, 200, { token: db.shareToken(me.id, payload.tripId) });
   }
 
   if (path === '/api/trip' && method === 'DELETE') {
@@ -301,6 +349,31 @@ const TYPES = {
   '.woff2': 'font/woff2', '.map': 'application/json',
 };
 
+/* Cache-busting.
+   ------------------------------------------------------------------
+   Cloudflare edge-caches .js/.css by extension for about two weeks regardless
+   of the Cache-Control this server sends — see ~/apps/HOSTING.md. "no-cache"
+   below keeps the *browser* honest (it revalidates instead of reusing a
+   stale copy for weeks), but the edge needs a URL it has never seen before,
+   not just a header. So every reference to a js/ file — the `<script>` tag in
+   index.html, and every `import './x.js'` inside each module, since there's
+   no bundler here to do this automatically — carries `?v=<hash>` of the
+   current js/ + css/ contents. A deploy that changes any file changes the
+   hash, so it changes every one of those URLs at once and Cloudflare simply
+   has never cached the new ones. The hash is computed once at startup, which
+   is enough: a deploy on this box always restarts the service. */
+const ASSET_V = (() => {
+  const h = createHash('sha256');
+  for (const dir of ['js', 'css']) {
+    for (const name of readdirSync(join(ROOT, dir)).sort()) h.update(readFileSync(join(ROOT, dir, name)));
+  }
+  return h.digest('hex').slice(0, 10);
+})();
+
+const versionRefs = src => src
+  .replace(/((?:from|import)\(?\s*['"])(\.\/[\w.-]+\.js)(['"])/g, `$1$2?v=${ASSET_V}$3`)
+  .replace(/(href|src)="(css\/[\w.-]+\.css|js\/app\.js)"/g, `$1="$2?v=${ASSET_V}"`);
+
 async function serveStatic(req, res, url) {
   let rel = decodeURIComponent(url.pathname);
   if (rel.endsWith('/')) rel += 'index.html';
@@ -309,12 +382,18 @@ async function serveStatic(req, res, url) {
   try {
     const info = await stat(file);
     if (info.isDirectory()) return serveStatic(req, res, new URL(rel + '/', 'http://x'));
-    const body = await readFile(file);
+    const ext = extname(file).toLowerCase();
+    // index.html and our own js/ modules get their asset references stamped;
+    // vendor/ is a plain script with no imports of its own, left untouched
+    const rewrite = ext === '.html' || (ext === '.js' && file.startsWith(join(ROOT, 'js') + '/'));
+    const body = rewrite ? Buffer.from(versionRefs(await readFile(file, 'utf8'))) : await readFile(file);
     res.writeHead(200, {
-      'Content-Type': TYPES[extname(file).toLowerCase()] || 'application/octet-stream',
+      'Content-Type': TYPES[ext] || 'application/octet-stream',
       'Content-Length': body.length,
-      // the app is small and edited often; let the browser revalidate
-      'Cache-Control': extname(file) === '.html' ? 'no-cache' : 'public, max-age=0, must-revalidate',
+      // html/js/css are small and edited often, so always revalidate — the
+      // ASSET_V comment above covers why that alone isn't enough against
+      // Cloudflare's edge and what the `?v=` on each one is for
+      'Cache-Control': ext === '.html' || ext === '.js' || ext === '.css' ? 'no-cache' : 'public, max-age=0, must-revalidate',
     });
     res.end(req.method === 'HEAD' ? undefined : body);
   } catch {

@@ -24,12 +24,15 @@ async function boot() {
     $$('#tripTitle, #startDate, #endDate').forEach(el => (el.readOnly = el.disabled = true));
   } else {
     store.load();
+    // only ever sweep IndexedDB against your OWN trip's references — doing this
+    // while viewing someone else's (or your own) shared, read-only copy would
+    // delete local photos that copy simply doesn't mention
+    db.gc(store.referencedBlobs()).catch(() => {});
   }
 
   map.initMap();
   syncHeader();
   redraw({ fit: true });
-  db.gc(store.referencedBlobs()).catch(() => {});
 
   store.subscribe(reason => {
     if (reason === 'sync') return paintAccount();
@@ -67,19 +70,40 @@ $('#endDate').addEventListener('change', e => store.setTripField('endDate', e.ta
 
 $('#btnPrint').addEventListener('click', () => window.print());
 
-$('#btnShare').addEventListener('click', async () => {
-  const url = await buildShareLink();
+$('#btnShare').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Preparing…';
+  const { url, photosIncluded, error } = await buildShareLink();
+  btn.disabled = false;
+  btn.textContent = 'Share';
+
+  const notes = [
+    !photosIncluded && cloud.sync.user ? `couldn't publish with photos (${esc(error || 'unknown error')}) — sent a lighter link instead` : '',
+    !photosIncluded && !cloud.sync.user ? 'sign in to include photos in the link' : '',
+    url.length > 12000 ? 'it is very long — some chat apps may truncate it' : '',
+  ].filter(Boolean).join('; ');
   try {
     await navigator.clipboard.writeText(url);
-    toast(`Read-only link copied to your clipboard. ${url.length > 12000 ? '<br>Heads up: it is very long — some chat apps may truncate it.' : ''}`);
+    toast(`Read-only link copied to your clipboard.${notes ? `<br>Heads up: ${notes}.` : ''}`);
   } catch {
     toast(`Read-only link: <a href="${esc(url)}">${esc(url.slice(0, 80))}…</a>`, 8000);
   }
 });
 
-$('#btnCopyToMine').addEventListener('click', () => {
+$('#btnCopyToMine').addEventListener('click', async () => {
   const copy = JSON.parse(JSON.stringify(state.trip));
   copy.id = uid();
+  // a shared trip's photos live at a server URL, not in IndexedDB — download
+  // them in so the copy behaves like any other local trip (editable, exportable,
+  // and independent of the original share once it's copied)
+  for (const list of Object.values(copy.photos || {})) {
+    for (const p of list) {
+      if (!p.url) continue;
+      try { await db.putBlob(p.id, await (await fetch(p.url)).blob()); } catch { /* keep going without this one */ }
+      delete p.url;
+    }
+  }
   state.readonly = false;
   store.replaceTrip(copy);
   history.replaceState(null, '', location.pathname + location.search);

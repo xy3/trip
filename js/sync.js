@@ -162,7 +162,14 @@ export async function pull() {
     const mine = await call(`/api/trip?id=${encodeURIComponent(state.trip.id)}`);
     if (mine.trip) {
       const mark = readMark(state.trip.id);
-      if (mark && mine.rev === mark.rev) return setStatus('idle');   // already in step
+      if (mark && mine.rev === mark.rev) {
+        // the document itself hasn't moved, but a photo can still be missing
+        // locally (cleared site data, a gc bug, browser storage eviction) while
+        // the server still has it — worth a cheap check every time
+        await downloadBlobs().catch(() => {});
+        emit('photos');
+        return setStatus('idle');
+      }
       if (isDirty()) return conflict(mine);
       await adopt(mine.trip, mine.rev);
       return setStatus('idle');
@@ -230,3 +237,19 @@ function refresh() {
 }
 
 export const syncNow = () => (isDirty() ? push() : pull());
+
+/* Publish the current trip at a stable, public read-only URL. Requires an
+   account: the link is just a token pointing at what's already saved
+   server-side, which is what lets photos ride as ordinary images instead of
+   being crammed into the link itself. Pushes first so the token always
+   reflects what's on screen, not whatever the server last happened to have. */
+export async function shareTrip() {
+  if (!sync.user) return null;
+  await push();                                   // push() swallows its own errors — check the outcome
+  if (sync.conflict) throw new Error('resolve the sync conflict before sharing');
+  if (sync.status === 'error') throw new Error(sync.message || 'could not save the trip before sharing');
+  const { token } = await call('/api/share', {
+    method: 'POST', type: 'application/json', body: JSON.stringify({ tripId: state.trip.id }),
+  });
+  return token;
+}

@@ -1,9 +1,21 @@
-/* Read-only share links carry the whole itinerary in the URL fragment, so the
-   app stays a static site — nothing is uploaded anywhere. Photos and file
-   attachments are left out (they live in the author's browser); export/import
-   of a .trip.json file carries everything. */
+/* Two kinds of share link.
+   ------------------------------------------------------------------
+   Signed in, with a server behind the app: Share pushes the trip and asks
+   for a token (js/sync.js `shareTrip`), and the link is just that token —
+   `#s=<token>`. Photos are never encoded into it at all; they're ordinary
+   images at their own server URL (GET /api/shares/:token/photos/:id), fetched
+   the normal way when the page loads. That's what makes this the good path:
+   no size limit, no downscaling, no base64 bloat.
+
+   No server, or not signed in: the whole itinerary is deflate-compressed and
+   base64url-encoded straight into the URL fragment, so the app stays usable
+   as a static site with nothing to upload. Photos and file attachments are
+   left out here — there is no server to host them, and embedding binaries
+   in a URL is exactly what the token path above exists to avoid. Use
+   export/import for a `.trip.json` file with everything, full quality. */
 import { state, referencedBlobs } from './store.js';
 import * as db from './db.js';
+import * as cloud from './sync.js';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -27,7 +39,7 @@ async function squeeze(stream, bytes) {
   return new Uint8Array(await new Response(cs.readable).arrayBuffer());
 }
 
-/* Trimmed copy: no binaries, no UI-only state. */
+/* Trimmed copy for the fragment path: no binaries, no attachments. */
 function shareableTrip() {
   const t = JSON.parse(JSON.stringify(state.trip));
   t.photos = {};
@@ -36,6 +48,19 @@ function shareableTrip() {
 }
 
 export async function buildShareLink() {
+  const base = location.href.split('#')[0];
+
+  let shareError = null;
+  if (cloud.sync.user) {
+    try {
+      const token = await cloud.shareTrip();
+      return { url: `${base}#s=${token}`, photosIncluded: true };
+    } catch (e) {
+      shareError = e.message;   // fall through to the lighter link below
+    }
+  }
+
+  // no account, or the server call above failed: a lighter link with no photos
   const json = JSON.stringify(shareableTrip());
   let payload;
   if (typeof CompressionStream === 'function') {
@@ -43,11 +68,21 @@ export async function buildShareLink() {
   } else {
     payload = 'j' + b64(enc.encode(json));
   }
-  const base = location.href.split('#')[0];
-  return `${base}#t=${payload}`;
+  return { url: `${base}#t=${payload}`, photosIncluded: false, error: shareError };
 }
 
 export async function tripFromHash(hash = location.hash) {
+  const s = /[#&]s=([^&]+)/.exec(hash);
+  if (s) {
+    try {
+      const res = await fetch(`/api/shares/${encodeURIComponent(s[1])}`, { credentials: 'same-origin' });
+      return res.ok ? (await res.json()).trip : null;
+    } catch (e) {
+      console.warn('Could not load shared trip', e);
+      return null;
+    }
+  }
+
   const m = /[#&]t=([^&]+)/.exec(hash);
   if (!m) return null;
   try {

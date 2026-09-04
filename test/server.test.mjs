@@ -68,6 +68,26 @@ await check('serves the static app at /', async () => {
   assert.match(await r.text(), /Trip Planner/);
 });
 
+await check('js/css references carry a cache-busting ?v=, and revalidate rather than cache', async () => {
+  // Cloudflare edge-caches .js/.css for ~two weeks regardless of headers, so a
+  // deploy needs URLs it has never seen, not just a "please reload" header —
+  // see ~/apps/HOSTING.md
+  const html = await (await req('/')).text();
+  const [, entryURL] = /src="(js\/app\.js\?v=[\w]+)"/.exec(html) || [];
+  assert.ok(entryURL, 'index.html points at a versioned js/app.js');
+  assert.match(html, /href="css\/app\.css\?v=[\w]+"/);
+
+  const script = await req('/' + entryURL);
+  assert.equal(script.status, 200);
+  assert.equal(script.headers.get('cache-control'), 'no-cache');
+  const body = await script.text();
+  assert.match(body, /from '\.\/store\.js\?v=[\w]+'/, 'internal imports are versioned too — there is no bundler here');
+
+  // the version tag is a query string, so the file itself is unaffected by it
+  const bare = await req('/js/app.js');
+  assert.equal(bare.status, 200);
+});
+
 await check('never serves its own source', async () => {
   assert.equal((await req('/server/.env')).status, 403);
   assert.equal((await req('/server/main.js')).status, 403);
@@ -200,6 +220,34 @@ await check('attachments count as references too', async () => {
   }) }) });
   rev = 5;
   assert.equal((await req('/api/blobs/ticket')).status, 200);
+});
+
+let shareToken;
+await check('sharing publishes a public, read-only copy with real photo URLs', async () => {
+  const shared = await jreq('/api/share', { method: 'POST', body: JSON.stringify({ tripId: 'trip-1' }) });
+  assert.equal(shared.status, 200);
+  shareToken = shared.body.token;
+  assert.ok(shareToken);
+
+  // sharing the same trip again reuses the token rather than minting a new one
+  const again = await jreq('/api/share', { method: 'POST', body: JSON.stringify({ tripId: 'trip-1' }) });
+  assert.equal(again.body.token, shareToken);
+
+  // the public read needs no session at all
+  const pub = await jreq(`/api/shares/${shareToken}`, { headers: { Cookie: '' } });
+  assert.equal(pub.status, 200);
+  assert.equal(pub.body.trip.title, 'Kansai v5');
+  assert.deepEqual(pub.body.trip.items.a.files, [], 'attachments do not travel in a share');
+  const photoURL = pub.body.trip.photos['2026-11-08'][0].url;
+  assert.equal(photoURL, `/api/shares/${shareToken}/photos/b1`, 'a photo gets a real, fetchable URL — nothing is encoded into the link');
+
+  const photo = await req(photoURL, { headers: { Cookie: '' } });
+  assert.equal(photo.status, 200);
+  assert.equal(photo.headers.get('content-type'), 'image/png');
+
+  // the token only unlocks blobs this trip's own document actually references
+  assert.equal((await req(`/api/shares/${shareToken}/photos/ticket`, { headers: { Cookie: '' } })).status, 404);
+  assert.equal((await req('/api/shares/not-a-real-token', { headers: { Cookie: '' } })).status, 404);
 });
 
 await check('one account cannot read another account\'s blobs', async () => {

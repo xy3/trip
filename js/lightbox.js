@@ -21,7 +21,7 @@ async function show() {
   index = (index + list.length) % list.length;
   const p = list[index];
   const img = $('#lbImage');
-  img.src = (await db.blobURL(p.id)) || '';
+  img.src = p.url || (await db.blobURL(p.id)) || '';   // p.url: a shared trip's server-hosted copy
   img.alt = p.caption || '';
   const cap = $('#lbCaption');
   cap.value = p.caption || '';

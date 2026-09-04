@@ -113,8 +113,10 @@ node server/main.js             # Node 22.5+, still no npm install
 ### 📤 Output
 
 - **Print** produces a clean, map-free itinerary for paper or PDF.
-- **Share** copies a read-only URL that carries the whole itinerary inside the link itself.
-- ⋯ → export/import a `.trip.json` bundle, which *does* include photos and attachments.
+- **Share** copies a read-only URL. Signed in, it's a short link to a server-hosted copy with
+  full-quality photos; without an account it falls back to the whole itinerary encoded into the
+  link itself, with no photos (see [Share links](#share-links)).
+- ⋯ → export/import a `.trip.json` bundle for full-quality photos plus file attachments.
 
 ---
 
@@ -390,20 +392,36 @@ Restart=always
 
 ### Share links
 
-`js/share.js` serialises the trip, strips the binaries, deflate-compresses it with
-`CompressionStream`, base64url-encodes it, and puts it in the URL **fragment**:
+There are two kinds, and `js/share.js` picks between them:
+
+**Signed in, with a server behind the app** — the normal case on a hosted deployment. Share
+pushes the current trip (`cloud.push()`) and asks the server for a token (`POST /api/share`,
+`js/sync.js` `shareTrip`); the link is just that token:
 
 ```
-https://…/trip/#t=z<compressed itinerary>
+https://…/trip/#s=<token>
 ```
 
-Opening such a link loads that trip in read-only mode — editing is disabled, saving is a no-op,
-and a banner offers *Make an editable copy*, which clones it into the visitor's own browser.
+The server hands back the trip with each photo's bare id replaced by a real URL —
+`GET /api/shares/<token>/photos/<id>` — so photos load as ordinary images once the page opens,
+at full quality, with no size limit and nothing encoded into the link itself. The token is a
+stable alias for one `(account, trip)` pair (`server/db.js`'s `shares` table) — sharing the same
+trip again reuses it rather than minting a new one, and it unlocks that trip's own photos only,
+never attachments or any other blob the account owns (`server/main.js` checks the requested id
+against the trip's own photo list before serving it).
 
-Because it is a fragment it is never sent to a server, which is what makes a static app able to
-"share" at all. Two consequences worth knowing: photos and attachments cannot travel this way
-(use export/import instead), and anyone holding the link can read the itinerary — treat it as
-public.
+**No account, or no server** — the app is a static site first, so this path still works with
+nothing to upload: the trip is deflate-compressed and base64url-encoded straight into the
+fragment (`#t=z<...>`), same as before this existed. Photos and file attachments are left out
+here — there is no server to host them, and embedding binaries into a URL is exactly what the
+token path above exists to avoid. Use export/import for a `.trip.json` file with everything
+(photos, attachments, full quality) if you need it to travel without a server at all.
+
+Either way, opening a share link loads that trip in read-only mode — editing is disabled, saving
+is a no-op, and a banner offers *Make an editable copy*, which clones it into the visitor's own
+browser (downloading any server-hosted photos into that browser's IndexedDB, so the copy behaves
+exactly like any other local trip, independent of the original share). And either way, anyone
+holding the link can read the itinerary — treat it as public.
 
 ### External services
 
@@ -514,9 +532,11 @@ npm i playwright-core && npx playwright install chromium
 
 - **One trip at a time** in a browser. Export/import to keep more. (The server does keep
   every trip you have saved; the app just opens the most recent.)
-- **Share links can get long.** A large itinerary makes a large URL; some chat apps truncate.
-- **Photos are local.** They are in your browser's IndexedDB, not in the share link. Clearing
-  site data clears them — export first.
+- **A fragment share link can get long.** Without an account (or without a server), a large
+  itinerary makes a large URL; some chat apps truncate it. Signed in, the link is just a short
+  token and this doesn't apply.
+- **Photos only travel in a share link when you're signed in.** Otherwise they're local to your
+  browser's IndexedDB, not in the link. Export always carries them, either way.
 - **The routing and search services are public demo endpoints.** Fine for planning a trip,
   not for bulk use; that is why only the focused day is routed.
 - **Sync is last-writer-wins at the document level**, with a conflict prompt rather than a

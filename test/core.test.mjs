@@ -192,4 +192,28 @@ assert.equal(Object.keys(decoded.stays).length, 2, 'stays travel in the share li
 assert.deepEqual(decoded.photos, {}, 'share links carry no binaries');
 assert.equal(await share.tripFromHash('#nope'), null);
 
+/* --- day groups: label, colour, and clip a run of days --- */
+store.replaceTrip({ ...store.blankTrip(), startDate: '2026-11-01', endDate: '2026-11-06' });
+const tokyo = store.addGroup({ title: 'Tokyo', color: '#f2b705', start: '2026-11-01', end: '2026-11-03' });
+assert.equal(store.groupFor('2026-11-02').id, tokyo.id);
+assert.equal(store.groupFor('2026-11-04'), null, 'a day outside the span belongs to no group');
+assert.deepEqual(store.groupList().map(g => g.id), [tokyo.id]);
+
+// a second group overlapping the first's tail end clips the first instead of stacking
+const kyoto = store.addGroup({ title: 'Kyoto', color: '#6aa9ff', start: '2026-11-03', end: '2026-11-06' });
+assert.equal(store.groupFor('2026-11-03').id, kyoto.id, 'the newer span wins the contested day');
+assert.equal(state.trip.groups.find(g => g.id === tokyo.id)?.end, '2026-11-02');
+
+store.updateGroup(tokyo.id, { title: 'Tōkyō' });
+assert.equal(store.groupFor('2026-11-01').title, 'Tōkyō');
+
+// shrinking the trip drops a group that falls entirely outside the new range,
+// and clips one that only partly does
+store.setTripField('endDate', '2026-11-04');
+assert.equal(store.groupFor('2026-11-04').id, kyoto.id, 'partially-covered group survives, clipped');
+assert.equal(state.trip.groups.find(g => g.id === kyoto.id)?.end, '2026-11-04');
+
+store.removeGroup(kyoto.id);
+assert.equal(store.groupList().length, 1);
+
 console.log('all core checks passed');

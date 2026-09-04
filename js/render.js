@@ -1,5 +1,6 @@
 import {
   state, days, itemsIn, staysOn, dayCost, tripCost, photosOf, setPhotoRatio, dayRoute, UNSCHEDULED,
+  groupFor, groupList, OVERVIEW,
 } from './store.js';
 import { catOf } from './categories.js';
 import { $, esc, fmtDate, fmtDateShort, money, fmtKm, fmtDur, dayCount } from './util.js';
@@ -19,11 +20,98 @@ const cur = () => state.trip.currency || 'USD';
 export function render() {
   const root = $('#timeline');
   const scrollTop = root.scrollTop;
-  root.innerHTML = [scratchpadBlock(), ...days().map(dayBlock)].join('');
+  root.innerHTML = [overviewBlock(), scratchpadBlock(), ...timelineBlocks()].join('');
   root.scrollTop = scrollTop;
   paintLegs();
   hydratePhotos(root);
   renderTotals();
+}
+
+/* ---------------- trip overview ---------------- */
+/* A single glance at the shape of the trip: how long, how full, what it costs,
+   and — if any days have been grouped ("Tokyo") — a segmented strip showing
+   where each stretch falls across the whole timeline. */
+function overviewBlock() {
+  const ds = days();
+  const stops = ds.reduce((n, d) => n + itemsIn(d).length, 0);
+  const ideas = itemsIn(UNSCHEDULED).length;
+  const nights = Object.values(state.trip.stays)
+    .reduce((n, s) => n + (s.checkIn && s.checkOut ? Math.max(0, dayCount(s.checkIn, s.checkOut) - 1) : 0), 0);
+  const cost = tripCost();
+  const groups = groupList();
+  const collapsed = state.trip.collapsed[OVERVIEW] ? ' collapsed' : '';
+  const range = ds.length ? `${esc(fmtDateShort(ds[0]))} – ${esc(fmtDateShort(ds[ds.length - 1]))}` : 'Set a date range to begin';
+
+  const stat = (n, label) => `<div class="stat"><b>${n}</b><span>${label}</span></div>`;
+  return `
+  <section class="block overview${collapsed}" data-bucket="${OVERVIEW}">
+    <header class="block-head" data-collapse>
+      <span class="day-num">✦</span>
+      <div>
+        <div class="block-title">Trip overview</div>
+        <div class="block-sub">${range}</div>
+      </div>
+      <div class="block-meta">
+        <button class="icon-btn chev" data-collapse title="Collapse">▾</button>
+      </div>
+    </header>
+    <div class="block-body">
+      <div class="overview-stats">
+        ${stat(ds.length, ds.length === 1 ? 'day' : 'days')}
+        ${stat(nights, nights === 1 ? 'night' : 'nights')}
+        ${stat(stops, stops === 1 ? 'stop' : 'stops')}
+        ${ideas ? stat(ideas, ideas === 1 ? 'idea' : 'ideas') : ''}
+        ${cost ? stat(money(cost, cur()), 'total') : ''}
+      </div>
+      ${groups.length ? overviewShape(ds, groups) : ''}
+    </div>
+  </section>`;
+}
+
+function overviewShape(ds, groups) {
+  const bar = ds.map(d => {
+    const g = groupFor(d);
+    const style = g ? ` style="--seg:${esc(g.color)}"` : '';
+    const label = g ? `${esc(fmtDateShort(d))} · ${esc(g.title || 'Untitled group')}` : esc(fmtDateShort(d));
+    return `<span class="seg${g ? '' : ' seg-plain'}"${style} data-focus-day="${d}" title="${label}"></span>`;
+  }).join('');
+  const legend = groups.map(g => `
+    <span class="legend-chip" style="--lc:${esc(g.color)}" data-focus-day="${g.start}" title="Jump to ${esc(g.title || 'this group')}">
+      <i></i>${esc(g.title || 'Untitled group')}
+    </span>`).join('');
+  return `<div class="overview-bar">${bar}</div><div class="overview-legend">${legend}</div>`;
+}
+
+/* Days render one after another, except that a run of consecutive days under
+   the same group gets wrapped in a single coloured, titled section instead of
+   standing alone. */
+function timelineBlocks() {
+  const all = days();
+  const out = [];
+  for (let i = 0; i < all.length;) {
+    const g = groupFor(all[i]);
+    if (!g) { out.push(dayBlock(all[i], i)); i++; continue; }
+    const start = i;
+    const keys = [];
+    while (i < all.length && groupFor(all[i])?.id === g.id) { keys.push(all[i]); i++; }
+    out.push(groupBlock(g, keys, start));
+  }
+  return out;
+}
+
+function groupBlock(g, keys, startIndex) {
+  return `
+  <section class="day-group" style="--group-color:${esc(g.color)}">
+    <header class="group-head">
+      <span class="group-bar"></span>
+      <div class="group-title" data-edit-group="${g.id}" title="Edit group">${esc(g.title || 'Untitled group')}</div>
+      <div class="group-actions">
+        <button class="icon-btn" data-edit-group="${g.id}" title="Edit group">✎</button>
+        <button class="icon-btn" data-del-group="${g.id}" title="Remove group label">🗑</button>
+      </div>
+    </header>
+    ${keys.map((k, j) => dayBlock(k, startIndex + j)).join('')}
+  </section>`;
 }
 
 function renderTotals() {

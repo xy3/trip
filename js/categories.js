@@ -11,6 +11,13 @@ export const CATEGORIES = {
 export const catOf = key => CATEGORIES[key] || CATEGORIES.other;
 export const catColor = key => catOf(key).color;
 
+/* Palette offered when labelling a group of days (e.g. "Tokyo"). Kept distinct
+   from CATEGORIES so a group's colour never gets confused for an activity's. */
+export const GROUP_COLORS = [
+  '#f2b705', '#ff7fb0', '#6cb98f', '#6aa9ff',
+  '#b18bff', '#ff8a5c', '#e07fb8', '#57c98a',
+];
+
 /* Best-effort mapping from OSM/Nominatim classes to our categories. */
 export function guessCategory({ class: cls = '', type = '' } = {}) {
   const t = `${cls}:${type}`;

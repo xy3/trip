@@ -5,6 +5,7 @@ const KEY = 'trip-planner:v1';
 const VERSION = 1;
 
 export const UNSCHEDULED = 'unscheduled';
+export const OVERVIEW = 'overview';   // synthetic bucket id: the collapsible summary card
 
 export function blankTrip() {
   const start = todayKey();
@@ -20,6 +21,7 @@ export function blankTrip() {
     order: { [UNSCHEDULED]: [] },
     photos: {},
     collapsed: {},
+    groups: [],
   };
 }
 
@@ -95,6 +97,7 @@ function migrate(t) {
   trip.order = trip.order || {};
   trip.photos = trip.photos || {};
   trip.collapsed = trip.collapsed || {};
+  trip.groups = trip.groups || [];
   return trip;
 }
 
@@ -125,6 +128,17 @@ export function normalize() {
   }
   // orphan items (present in items but no bucket) go to the scratchpad
   for (const id of Object.keys(t.items)) if (!seen.has(id)) t.order[UNSCHEDULED].push(id);
+
+  // day groups: drop ones the range no longer touches at all, and pull the
+  // rest back inside it so a group can never point at a day that doesn't exist
+  if (days.length) {
+    const first = days[0], last = days[days.length - 1];
+    t.groups = (t.groups || [])
+      .filter(g => g.end >= first && g.start <= last)
+      .map(g => ({ ...g, start: g.start < first ? first : g.start, end: g.end > last ? last : g.end }));
+  } else {
+    t.groups = [];
+  }
 }
 
 export const days = () => dateRange(state.trip.startDate, state.trip.endDate);
@@ -354,6 +368,51 @@ export function setPhotoCaption(bucket, blobId, caption) {
 export function toggleCollapsed(bucket) {
   state.trip.collapsed[bucket] = !state.trip.collapsed[bucket];
   save(); emit('collapse');
+}
+
+/* ---------------- day groups ---------------- */
+/* A labelled, coloured span of consecutive days, e.g. "Tokyo" over the days
+   the trip is there. Spans may not overlap: dropping a group onto days another
+   group already covers clips or removes whichever side lost the argument. */
+export const groupList = () => [...(state.trip.groups || [])].sort((a, b) => a.start.localeCompare(b.start));
+
+export const groupFor = dayKey =>
+  (state.trip.groups || []).find(g => dayKey >= g.start && dayKey <= g.end) || null;
+
+function deconflict(groups, id, start, end) {
+  const out = [];
+  for (const g of groups) {
+    if (g.id === id) continue;
+    if (g.end < start || g.start > end) { out.push(g); continue; }        // no overlap
+    if (g.start < start && g.end > end) {                                  // engulfed: split
+      out.push({ ...g, id: uid(), end: addDays(start, -1) });
+      out.push({ ...g, start: addDays(end, 1) });
+    } else if (g.start < start) out.push({ ...g, end: addDays(start, -1) });
+    else if (g.end > end) out.push({ ...g, start: addDays(end, 1) });
+    // else: fully covered by the new span — drop it
+  }
+  return out;
+}
+
+export function addGroup({ title = '', color, start, end }) {
+  const g = { id: uid(), title, color, start, end: end < start ? start : end };
+  state.trip.groups = [...deconflict(state.trip.groups || [], null, g.start, g.end), g];
+  save(); emit('groups');
+  return g;
+}
+
+export function updateGroup(id, patch) {
+  const g = (state.trip.groups || []).find(x => x.id === id);
+  if (!g) return;
+  Object.assign(g, patch);
+  if (g.end < g.start) g.end = g.start;
+  state.trip.groups = [...deconflict(state.trip.groups, id, g.start, g.end), g];
+  save(); emit('groups');
+}
+
+export function removeGroup(id) {
+  state.trip.groups = (state.trip.groups || []).filter(g => g.id !== id);
+  save(); emit('groups');
 }
 
 /* Every blob id the trip still points at. */

@@ -56,6 +56,12 @@ node server/main.js             # Node 22.5+, still no npm install
 - Fixed split layout with a draggable divider; the width is remembered.
 - Start/end date pickers generate one block per day.
 - An **Ideas scratchpad** holds places before they are scheduled.
+- **🏷 Group days** to wrap a run of consecutive days — the days you're in Tokyo, say — in a
+  single coloured, titled section. Dropping a new group onto days another one already covers
+  clips or splits the loser rather than stacking two labels on the same day.
+- A **Trip overview** card sits above everything else: day/night/stop counts and the running
+  total at a glance, plus — once you have groups — a segmented strip of the whole timeline
+  coloured by group, with a legend you can click to jump straight to one.
 
 ### 📋 Itinerary
 
@@ -125,6 +131,7 @@ Everything is one plain JSON document, `state.trip`, defined in `js/store.js`:
   order:  { unscheduled: [id…], '2026-09-01': [id…], … },   // the itinerary itself
   photos: { [bucket]: [{ id, caption, source, r }] },
   collapsed: { [bucket]: true },
+  groups: [{ id, title, color, start, end }],   // day-groups, e.g. "Tokyo" over start…end
 }
 ```
 
@@ -140,6 +147,13 @@ place, or a hotel without any special cases.
 **Stays are not activities.** They live in their own map because they span a *range* of days
 rather than sitting in one day's order, and are rendered into every day between check-in and
 check-out.
+
+**Groups** are lighter still: `start`/`end` are just the two ends of an inclusive day range, and
+`groupFor(dayKey)` (`js/store.js`) is a linear scan for whichever group's range contains that key
+— there's no per-day index to keep in sync. Spans are kept non-overlapping at write time
+(`addGroup`/`updateGroup` clip or split whatever the new span encroaches on) rather than resolved
+at render time, so `groupFor` never has to pick a winner. Shrinking the trip's date range clips
+or drops groups the same way `normalize()` already does for `order`.
 
 Dates are plain `YYYY-MM-DD` strings throughout (`js/util.js`), never `Date` objects with a
 time — so no trip has ever shifted by a day because of a timezone.
@@ -408,6 +422,7 @@ except tiles, search, routing and photo lookup keeps working.
 | Paste target | Whatever is under the pointer → selected activity → focused day → scratchpad |
 | Focus a day on the map | Click the day header; click again to zoom back out |
 | Collapse a day | The ▾ chevron |
+| Group / edit / ungroup days | 🏷 Group days; ✎ or the title on an existing group; 🗑 to remove the label |
 | Edit an activity | ✎, or double-click the card |
 | Lightbox | Click a photo; ←/→ to move, Esc to close |
 
@@ -429,6 +444,7 @@ js/
   photos.js      Wikipedia photo lookup
   dnd.js         drag & drop: cards, stays, search results
   editor.js      activity/stay dialog, links, attachments
+  groups.js      day-group dialog (title, colour, date span)
   lightbox.js    full-screen gallery
   share.js       share links, export/import bundles
   sync.js        optional cloud sync: probe, pull, push, blobs, conflicts

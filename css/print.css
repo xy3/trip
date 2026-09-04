@@ -30,11 +30,25 @@ body::after{
   border-top:.5pt solid #ccc; padding-top:2mm;
 }
 
+.day-group{
+  border:0; border-top:2pt solid #000; border-radius:0; margin:0 0 6mm; background:#fff;
+}
+.day-group .block{ margin:0; }
+.group-head{ background:#fff !important; padding:2mm 0 1mm; }
+.group-title{ font-size:14pt; text-transform:none; letter-spacing:normal; color:#000; }
+.group-bar{ background:#000 !important; }
+.group-actions{ display:none; }
+
 .block{
   break-inside:avoid; page-break-inside:avoid; border:0; border-top:1pt solid #000;
   border-radius:0; box-shadow:none; margin:0 0 6mm; background:#fff;
 }
 .block.collapsed .block-body{ display:block !important; }
+.overview-bar{ height:2mm; border-radius:0; margin:3mm 0; }
+.overview-bar .seg{ background:#eee !important; }
+.overview-legend{ gap:2mm; }
+.legend-chip{ background:#fff !important; border:.5pt solid #000 !important; color:#000 !important; border-radius:0; }
+.legend-chip i{ background:#000 !important; }
 .block-head{ border:0; padding:2mm 0 1mm; background:#fff; }
 .block-head .chev{ display:none; }
 .day-num{ background:#000; color:#fff; border-radius:3px; }

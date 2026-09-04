@@ -7,6 +7,7 @@ import * as map from './map.js';
 import { render } from './render.js';
 import { initDnD, dropPlace, PLACE } from './dnd.js';
 import { openEditor } from './editor.js';
+import { openGroupEditor } from './groups.js';
 import { openLightbox } from './lightbox.js';
 import { buildShareLink, tripFromHash, exportBundle, importBundle } from './share.js';
 import * as db from './db.js';
@@ -241,6 +242,18 @@ timeline.addEventListener('click', async e => {
 
   const hit = sel => t.closest(`[${sel}]`)?.getAttribute(sel);
 
+  const focusDayKey = hit('data-focus-day');
+  if (focusDayKey) return focusBucket(focusDayKey);
+
+  const editGroupId = hit('data-edit-group');
+  if (editGroupId) return openGroupEditor({ id: editGroupId });
+
+  const delGroupId = hit('data-del-group');
+  if (delGroupId) {
+    if (confirm('Remove this group label? The days themselves are untouched.')) store.removeGroup(delGroupId);
+    return;
+  }
+
   const editId = hit('data-edit');
   if (editId) return openEditor(editId);
 
@@ -333,6 +346,8 @@ stayToggle.addEventListener('click', () => {
   store.setIncludeStays(!state.includeStays);
   stayToggle.classList.toggle('active', state.includeStays);
 });
+
+$('#btnAddGroup').addEventListener('click', () => openGroupEditor({ start: dayTarget() || state.trip.startDate }));
 
 $('.tab[data-view="all"]').addEventListener('click', () => {
   state.focusDay = null;

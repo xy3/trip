@@ -67,6 +67,7 @@
     <div class="view-tabs" role="tablist">
       <button class="tab active" data-view="all" role="tab">Whole trip</button>
       <button class="tab" id="btnStayRoute" title="Route each day out of and back into where you are staying">🛏 Stays in route</button>
+      <button class="tab" id="btnAddGroup" title="Label a stretch of days with a title and colour, e.g. “Tokyo”">🏷 Group days</button>
       <span class="tab-hint">Click a day to focus the map</span>
     </div>
 
@@ -131,6 +132,33 @@
     </div>
     <footer class="dialog-foot">
       <button type="button" id="btnDeleteItem" class="btn danger">Delete</button>
+      <span class="spacer"></span>
+      <button value="cancel" class="btn">Cancel</button>
+      <button value="save" class="btn btn-primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Day-group editor -->
+<dialog id="groupEditor" class="dialog">
+  <form method="dialog" id="groupForm">
+    <header class="dialog-head">
+      <h2 id="groupEditorTitle">Group days</h2>
+      <button value="cancel" class="btn btn-icon" aria-label="Close">✕</button>
+    </header>
+    <div class="dialog-body">
+      <label class="field">Title<input name="title" placeholder="e.g. Tokyo" required></label>
+      <div class="grid-2">
+        <label class="field">From<input name="start" type="date" required></label>
+        <label class="field">To<input name="end" type="date" required></label>
+      </div>
+      <label class="field">Colour
+        <div id="groupColors" class="color-swatches"></div>
+        <input type="hidden" name="color">
+      </label>
+    </div>
+    <footer class="dialog-foot">
+      <button type="button" id="btnDeleteGroup" class="btn danger">Delete</button>
       <span class="spacer"></span>
       <button value="cancel" class="btn">Cancel</button>
       <button value="save" class="btn btn-primary">Save</button>

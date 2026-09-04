@@ -10,6 +10,7 @@ process.env.DB_FILE = join(dir, 'test.db');
 process.env.PORT = '0';
 process.env.GOOGLE_CLIENT_ID = 'test-client';
 process.env.GOOGLE_CLIENT_SECRET = 'test-secret';
+process.env.GOOGLE_PLACES_KEY = '';   // stubbed off — never hit the real Google API from a test run
 
 let pass = 0;
 const check = (name, fn) => fn().then(() => { pass++; console.log(`  ✓ ${name}`); },
@@ -82,6 +83,14 @@ await check('anonymous /api/me advertises providers but no user', async () => {
 await check('trip endpoints require a session', async () => {
   assert.equal((await jreq('/api/trip')).status, 401);
   assert.equal((await jreq('/api/trip', { method: 'PUT', body: '{}' })).status, 401);
+});
+
+await check('place search needs no session, but does need a configured key', async () => {
+  // this server started with no GOOGLE_PLACES_KEY — geo.js reads the 404 as
+  // "not offered here" and falls back to the keyless sources
+  const { status, body } = await jreq('/api/places/search?q=coffee');
+  assert.equal(status, 404);
+  assert.ok(body.error);
 });
 
 await check('a bad oauth state is rejected', async () => {

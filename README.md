@@ -77,10 +77,11 @@ node server/main.js             # Node 22.5+, still no npm install
 
 ### 🔎 Search and map
 
-- Place search across **three sources at once** — Nominatim, Photon and geotagged Wikipedia —
-  ranked together and biased toward whatever the map is showing. Click a result to add it, or
-  **drag it onto a day**. Results recognised as hotels are added as *accommodation* rather
-  than as a stop.
+- Place search uses **Google Places** when the server has a key configured (see
+  `server/.env.example`), falling back to three keyless sources at once — Nominatim, Photon and
+  geotagged Wikipedia — ranked together and biased toward whatever the map is showing. Click a
+  result to add it, or **drag it onto a day**. Results recognised as hotels are added as
+  *accommodation* rather than as a stop. Nothing found? **Add it manually** in the empty state.
 - Click a day header to focus the map on that day; click again, or press **Whole trip**, to
   zoom back out.
 - Pins are numbered 1, 2, 3… in itinerary order, with the path drawn between consecutive stops.
@@ -220,9 +221,19 @@ Routing and geocoding results are cached per session; searches are debounced.
 
 ### Place search
 
-One geocoder is not enough for trip planning. Nominatim matches names strictly, so a ryokan
-called *Ochiairo* or a park written 箕面 in OSM and "Minoo" by everyone else simply returns
-nothing. `searchPlaces` therefore asks three keyless sources in parallel and merges them:
+`searchPlaces` (`js/geo.js`) tries **Google Places** first, through a small server-side proxy
+(`GET /api/places/search` in `server/main.js`) — the Places web service doesn't send CORS
+headers, so the browser can't call it directly, and keeping the key server-side means it never
+reaches the page at all. No sign-in is required to use it (search has to work before you have an
+account); a lightweight per-caller rate limit stands in for auth instead, capping the worst case
+if the endpoint gets scraped. The proxy is skipped entirely on a static deployment (no server) or
+when `GOOGLE_PLACES_KEY` isn't set — `js/geo.js` reads the resulting 404 once and stops asking for
+the rest of the session.
+
+Without Google, or when it draws a blank, search falls back to three keyless sources merged
+together. One geocoder is not enough for trip planning on its own: Nominatim matches names
+strictly, so a ryokan called *Ochiairo* or a park written 箕面 in OSM and "Minoo" by everyone else
+simply returns nothing. `searchPlaces` asks three keyless sources in parallel and merges them:
 
 | Source | Good at |
 |---|---|
@@ -399,8 +410,9 @@ public.
 | Service | Used for | Key required |
 |---|---|---|
 | OpenStreetMap tiles | The basemap (filtered dark to match the theme) | no |
-| Nominatim | Place search, addresses and prominence | no |
-| Photon (komoot) | Fuzzy place search over the same OSM data | no |
+| Google Places (New) | Place search, via the server proxy | yes, server-side only — `GOOGLE_PLACES_KEY` |
+| Nominatim | Place search fallback, addresses and prominence | no |
+| Photon (komoot) | Fuzzy place search fallback over the same OSM data | no |
 | OSRM demo server | Road routing for the focused day | no |
 | Wikipedia API | Automatic place photos | no |
 
@@ -440,7 +452,8 @@ js/
   store.js       the trip document, mutations, persistence, day routes
   render.js      timeline markup, justified galleries, travel-leg labels
   map.js         Leaflet layers, numbered pins, routes, lodging spine
-  geo.js         merged place search (Nominatim + Photon + Wikipedia) and OSRM, cached
+  geo.js         place search (Google Places via the server, else Nominatim + Photon +
+                 Wikipedia) and OSRM routing, cached
   photos.js      Wikipedia photo lookup
   dnd.js         drag & drop: cards, stays, search results
   editor.js      activity/stay dialog, links, attachments
@@ -452,7 +465,8 @@ js/
   categories.js  categories, colours, OSM type → category guessing
   util.js        dates, money, distance, small helpers
 server/          optional; the app runs fine without any of this
-  main.js        http server: static site, /api, /auth — no npm dependencies
+  main.js        http server: static site, /api (incl. the Places search proxy), /auth —
+                 no npm dependencies
   db.js          node:sqlite schema and queries
   auth.js        Google OAuth (authorization code + PKCE)
   .env.example   configuration template

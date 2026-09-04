@@ -13,10 +13,14 @@ const searchCache = new Map();
 const routeCache = new Map();
 
 /* ---------------- place search ----------------
-   One source is never enough. Nominatim is authoritative for addresses but
-   matches names strictly, so a ryokan called "Ochiairo" or a park spelled
-   "Minoo" in one language and 箕面 in another simply returns nothing. So we
-   ask three keyless sources at once and merge them:
+   Google Places, via our own server as a proxy (server/main.js — the Places
+   web service doesn't send CORS headers, so the browser can't call it
+   directly), is tried first when the deployment has a key configured: it
+   finds businesses and local names that the sources below routinely miss,
+   and its own ranking is used as-is rather than run through our scoring.
+
+   Whenever there's no server, no key, or Google draws a blank, we fall back
+   to three keyless sources at once and merge them:
 
      Nominatim  addresses and exact OSM names
      Photon     the same OSM data behind a fuzzy, typo-tolerant index, which
@@ -72,11 +76,25 @@ const answered = (hits, q) => {
   return hits.some(h => want.every(t => hasWord(tokens(h.name), t)));
 };
 
+let googleAvailable = true;   // flips off for the rest of the session on the first 404 (no key configured)
+
 export async function searchPlaces(query, { near = null, limit = 8, signal } = {}) {
   const q = query.trim();
   if (q.length < 2) return [];
   const key = `${q}|${near ? `${near.lat.toFixed(1)},${near.lng.toFixed(1)}` : ''}`;
   if (searchCache.has(key)) return searchCache.get(key);
+
+  if (googleAvailable) {
+    try {
+      const hits = await fromGoogle(q, near, signal, limit);
+      if (hits.length) { searchCache.set(key, hits); return hits; }
+      // answered with nothing — give the keyless trio below a shot too
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      if (err.code === 404) googleAvailable = false;   // not configured on this server; stop asking
+      // any other failure (network hiccup, 5xx, rate-limited) is worth retrying next search
+    }
+  }
 
   const settled = await Promise.allSettled([
     fromNominatim(q, near, signal),
@@ -104,6 +122,23 @@ export async function searchPlaces(query, { near = null, limit = 8, signal } = {
     .slice(0, limit);
   searchCache.set(key, out);
   return out;
+}
+
+async function fromGoogle(q, near, signal, limit) {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  if (near) { params.set('lat', String(near.lat)); params.set('lng', String(near.lng)); }
+  const res = await fetch(`/api/places/search?${params}`, { signal, credentials: 'same-origin' });
+  if (!res.ok) throw Object.assign(new Error(`Google search failed (${res.status})`), { code: res.status });
+  const { results = [] } = await res.json();
+  return results
+    .filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lng))
+    .map((r, i) => ({
+      name: r.name,
+      display: shortAddress(r.address, r.name),
+      lat: r.lat, lng: r.lng,
+      class: r.types, type: r.primaryType,
+      source: 'google', rank: i,
+    }));
 }
 
 async function fromNominatim(q, near, signal) {

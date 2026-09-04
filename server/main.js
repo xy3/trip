@@ -36,6 +36,7 @@ const MAX_DOC = Number(env.MAX_DOC_BYTES || 8 * 1024 * 1024);
 const MAX_BLOB = Number(env.MAX_BLOB_BYTES || 25 * 1024 * 1024);
 const QUOTA = Number(env.QUOTA_BYTES || 750 * 1024 * 1024);
 const SECURE = BASE_URL.startsWith('https://');
+const PLACES_KEY = env.GOOGLE_PLACES_KEY || '';
 
 const db = openDB(DB_FILE);
 const providers = configured(env);
@@ -87,6 +88,49 @@ const sameOrigin = req => {
 const userOf = req => db.userForToken(cookies(req).sid);
 const publicUser = u => u && ({ id: u.id, name: u.name, email: u.email, avatar: u.avatar, provider: u.provider });
 
+/* ---------------- place search ----------------
+   A thin, server-side-only proxy to Google Places API (New) Text Search. It
+   lives here rather than being called straight from the browser because the
+   Places web service is a server-to-server API — it doesn't send CORS
+   headers, so a direct fetch() from js/geo.js would just fail. Keeping the
+   key server-side is also strictly better than a browser-restricted key: it
+   never appears in the page at all. */
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 20;                // per caller, per minute — generous for typing, tight for a scraper
+const rateHits = new Map();
+function placesRateLimited(req) {
+  const key = req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const hits = (rateHits.get(key) || []).filter(t => now - t < RATE_WINDOW_MS);
+  hits.push(now);
+  rateHits.set(key, hits);
+  return hits.length > RATE_MAX;
+}
+
+/* Field mask is kept to Text Search Pro–tier fields (no ratings, hours, price
+   level, …) so this stays on Google's cheaper SKU — see
+   developers.google.com/maps/documentation/places/web-service/text-search#fieldmask */
+const PLACES_FIELDS = 'places.displayName,places.formattedAddress,places.location,places.primaryType,places.types';
+
+async function placesTextSearch(q, near, limit) {
+  const body = { textQuery: q, languageCode: 'en', maxResultCount: limit };
+  if (near) body.locationBias = { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: 50000 } };
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': PLACES_KEY, 'X-Goog-FieldMask': PLACES_FIELDS },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Google Places ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+  const data = await res.json();
+  return (data.places || []).map(p => ({
+    name: p.displayName?.text || '',
+    address: p.formattedAddress || '',
+    lat: p.location?.latitude, lng: p.location?.longitude,
+    primaryType: p.primaryType || '',
+    types: (p.types || []).join(':'),
+  }));
+}
+
 /* ---------------- routes ---------------- */
 async function api(req, res, url) {
   const path = url.pathname;
@@ -99,6 +143,29 @@ async function api(req, res, url) {
       providers: providers.map(p => ({ id: p, label: PROVIDERS[p].label })),
       quota: u ? { used: db.usage(u.id).bytes, total: QUOTA } : null,
     });
+  }
+
+  /* Place search has to work before you have an account — a static deployment
+     has no server for this at all, and js/geo.js falls back to keyless
+     OpenStreetMap sources whenever this 404s or errors. No sign-in gate, so a
+     lightweight per-caller rate limit stands in: enough to stop a stray bot
+     from running up the Google bill without getting in the way of a person
+     typing. */
+  if (path === '/api/places/search' && method === 'GET') {
+    if (!PLACES_KEY) return json(res, 404, { error: 'place search is not configured on this server' });
+    if (placesRateLimited(req)) return json(res, 429, { error: 'search is being rate-limited — try again shortly' });
+    const q = (url.searchParams.get('q') || '').trim();
+    if (q.length < 2) return json(res, 200, { results: [] });
+    const lat = Number(url.searchParams.get('lat'));
+    const lng = Number(url.searchParams.get('lng'));
+    const limit = Math.min(10, Number(url.searchParams.get('limit')) || 8);
+    try {
+      const near = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+      return json(res, 200, { results: await placesTextSearch(q, near, limit) });
+    } catch (e) {
+      console.error('places search failed:', e.message);
+      return json(res, 502, { error: 'place search is temporarily unavailable' });
+    }
   }
 
   if (path === '/api/signout' && method === 'POST') {
@@ -273,6 +340,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Trip Planner on ${BASE_URL}  (listening ${HOST}:${PORT})`);
   console.log(`  database  ${DB_FILE}`);
   console.log(`  sign-in   ${providers.length ? providers.join(', ') : 'not configured — the app still works, without sync'}`);
+  console.log(`  places    ${PLACES_KEY ? 'Google Places search enabled' : 'not configured — search falls back to OpenStreetMap'}`);
 });
 
 /* tiny .env reader: KEY=value lines, # comments, optional quotes */

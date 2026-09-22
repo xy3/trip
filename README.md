@@ -62,12 +62,15 @@ node server/main.js             # Node 22.5+, still no npm install
 - A **Trip overview** card sits above everything else: day/night/stop counts and the running
   total at a glance, plus — once you have groups — a segmented strip of the whole timeline
   coloured by group, with a legend you can click to jump straight to one.
-- **🎫 To book** is a separate checklist tab: one row per activity and stay, plus an inferred
-  "Transport from X to Y" row for any gap between two different stays that has no transit
-  activity already scheduled in it. Each row takes a price (the same `cost` field used
-  everywhere else), a free-text "booked for" field (time, flight number, confirmation code…),
-  notes, and confirmed/paid checkboxes — a row can't be paid without being confirmed first. It's
-  planning scratch space: left out of shared links and the printed/PDF itinerary.
+- **🎫 To book** is a separate checklist tab: an outbound and a return flight bookending the
+  whole trip, one row per activity and stay, and an inferred "Transport from X to Y" row for
+  any gap — airport to your first stay, between two different stays, or your last stay to the
+  airport — that has no transit activity already scheduled in it. Each row takes a price (the
+  same `cost` field used everywhere else for an activity/stay; flights and transport gaps have
+  no such field of their own, so theirs lives with the checklist), a free-text "booked for"
+  field (time, flight number, confirmation code…), notes, and confirmed/paid checkboxes — a row
+  can't be paid without being confirmed first. It's planning scratch space: left out of shared
+  links and the printed/PDF itinerary.
 
 ### 📋 Itinerary
 
@@ -172,12 +175,16 @@ Dates are plain `YYYY-MM-DD` strings throughout (`js/util.js`), never `Date` obj
 time — so no trip has ever shifted by a day because of a timezone.
 
 **`bookingMeta`** is keyed by the id it describes: an activity or stay's own id, sharing that
-object rather than duplicating the row, or a synthetic `transport:<idA>:<idB>` id for an
-inferred transport gap, which has no backing item so its `cost` lives here instead of on an
-activity. `js/store.js`'s `transportGaps()` recomputes those gaps from the stays and their
-scheduled transit activities on every call — nothing about a gap is stored, only its booking
-status once you've entered any — and `normalize()` prunes `bookingMeta` entries for anything
-that no longer exists (a deleted activity/stay, or a gap a since-added transit stop now covers).
+object rather than duplicating the row; a synthetic `transport:<idA>:<idB>` id for the gap
+between two stays, or `transport:arrival:<id>` / `transport:departure:<id>` for the leg before
+the first stay or after the last one; or the fixed `flight:outbound` / `flight:return`. None of
+these has a backing item, so their `cost` lives here instead of on an activity.
+`js/store.js`'s `transportGaps()` recomputes the transport gaps from the stays, the trip's own
+start/end dates, and any scheduled transit activities on every call — nothing about a gap is
+stored, only its booking status once you've entered any — and `normalize()` prunes `bookingMeta`
+entries for anything that no longer exists (a deleted activity/stay, or a gap a since-added
+transit stop now covers). The two flight ids are always considered valid and are never pruned,
+since a flight isn't tied to any itinerary day the way an activity is.
 
 ### Where your data lives
 

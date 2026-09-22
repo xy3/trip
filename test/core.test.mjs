@@ -227,22 +227,40 @@ assert.equal(state.trip.groups.find(g => g.id === kyoto.id)?.end, '2026-11-04');
 store.removeGroup(kyoto.id);
 assert.equal(store.groupList().length, 1);
 
-/* --- booking checklist: activities, stays, and inferred transport gaps --- */
+/* --- booking checklist: flights, activities, stays, and inferred transport --- */
 store.replaceTrip({ ...store.blankTrip(), startDate: '2026-12-01', endDate: '2026-12-05' });
 const parisHotel = store.addStay({ name: 'Paris Hotel', checkIn: '2026-12-01', checkOut: '2026-12-02', cost: 100 });
 const romeHotel = store.addStay({ name: 'Rome Hotel', checkIn: '2026-12-03', checkOut: '2026-12-05', cost: 150 });
 const dinner = store.addItem({ name: 'Dinner', category: 'food', cost: 40 }, '2026-12-01');
 
 let entries = store.bookingEntries();
-assert.deepEqual(entries.map(e => e.name),
-  ['Paris Hotel', 'Dinner', 'Transport from Paris Hotel to Rome Hotel', 'Rome Hotel']);
+assert.deepEqual(entries.map(e => e.name), [
+  'Outbound flight',                                   // bookends the trip regardless of what's scheduled
+  'Transport from the airport to Paris Hotel',          // inferred: nothing gets you there yet
+  'Paris Hotel', 'Dinner',
+  'Transport from Paris Hotel to Rome Hotel',           // inferred: the gap between the two stays
+  'Rome Hotel',
+  'Transport from Rome Hotel to the airport',
+  'Return flight',
+]);
 assert.equal(entries.every(e => !e.confirmed && !e.paid), true, 'nothing booked yet');
 
-// a transit activity scheduled in the gap covers it — no synthetic line needed
+// a transit activity scheduled in a gap covers only that gap — the airport
+// legs at either end are a separate inference and are untouched
 const train = store.addItem({ name: 'Train to Rome', category: 'transit' }, '2026-12-02');
-assert.equal(store.bookingEntries().some(e => e.kind === 'transport'), false, 'a scheduled transit stop covers the gap');
+entries = store.bookingEntries();
+assert.equal(entries.some(e => e.name === 'Transport from Paris Hotel to Rome Hotel'), false, 'a scheduled transit stop covers the gap');
+assert.equal(entries.some(e => e.name === 'Transport from the airport to Paris Hotel'), true, 'the arrival leg is a different gap');
+assert.equal(entries.some(e => e.name === 'Transport from Rome Hotel to the airport'), true, 'the departure leg is a different gap');
 await store.removeItem(train.id);
-assert.equal(store.bookingEntries().some(e => e.kind === 'transport'), true, 'gap reappears once the transit stop is gone');
+assert.equal(store.bookingEntries().some(e => e.name === 'Transport from Paris Hotel to Rome Hotel'), true, 'gap reappears once the transit stop is gone');
+
+// a flight has no backing item either — same bookingMeta-only price as a transport gap
+const outbound = () => store.bookingEntries().find(e => e.id === 'flight:outbound');
+store.setBooking('flight:outbound', 'flight', { cost: 480, confirmed: true, time: 'BA345, 09:20' });
+assert.equal(outbound().cost, 480);
+assert.equal(outbound().confirmed, true);
+assert.equal(outbound().time, 'BA345, 09:20');
 
 // confirmed -> paid, and back down again
 store.setBooking(dinner.id, 'item', { confirmed: true, time: '19:30', notes: 'Window table requested' });
@@ -275,5 +293,6 @@ await store.removeItem(dinner.id);
 store.setTripField('endDate', state.trip.endDate);   // re-normalize without changing anything
 assert.equal(state.trip.bookingMeta[dinner.id], undefined, 'booking status for a deleted item is pruned');
 assert.equal(state.trip.bookingMeta[romeHotel.id]?.confirmed, true, 'a still-existing stay keeps its status');
+assert.equal(state.trip.bookingMeta['flight:outbound']?.confirmed, true, 'a flight always keeps its status — it has no backing record to be pruned for');
 
 console.log('all core checks passed');

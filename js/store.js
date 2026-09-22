@@ -147,7 +147,7 @@ export function normalize() {
   // booking checklist: forget status for anything that no longer exists — a
   // deleted item/stay, or a transport gap that a since-added transit item
   // now covers
-  const validBooking = new Set([...Object.keys(t.items), ...Object.keys(t.stays), ...transportGaps().map(g => g.id)]);
+  const validBooking = new Set([...Object.keys(t.items), ...Object.keys(t.stays), ...transportGaps().map(g => g.id), ...FLIGHT_IDS]);
   for (const id of Object.keys(t.bookingMeta)) if (!validBooking.has(id)) delete t.bookingMeta[id];
 }
 
@@ -426,11 +426,13 @@ export function removeGroup(id) {
 }
 
 /* ---------------- booking checklist ---------------- */
-/* Everything left to book: every scheduled activity, every stay, and — where
-   two consecutive stays have no transit activity already covering the days
-   between them — a synthetic "Transport from X to Y" line. Status
-   (confirmed/paid) and free-form booking details live in trip.bookingMeta,
-   keyed by the item/stay id, or by a synthetic id for a transport gap. */
+/* Everything left to book: an outbound and a return flight bookending the
+   whole trip, every scheduled activity, every stay, and — wherever two
+   stays (or the trip's own start/end and its first/last stay) have no
+   transit activity already covering the days between them — a synthetic
+   "Transport from X to Y" line. Status (confirmed/paid) and free-form
+   booking details live in trip.bookingMeta, keyed by the item/stay id, or by
+   a synthetic id for a transport gap or a flight. */
 /* Stays in date order, deduped like staySpine() — but not restricted to
    geolocated ones, since a gap between two stays needs booking whether or
    not either has coordinates yet. */
@@ -441,36 +443,68 @@ function orderedStays() {
     .filter((s, i, arr) => i === 0 || s.id !== arr[i - 1].id);
 }
 
+/* Ground transport: to the first stay from wherever the trip starts (the
+   airport, typically), between consecutive stays, and from the last stay to
+   wherever it ends. `rank` only exists to order these against flights/stays/
+   items that land on the very same day — see bookingEntries(). */
 export function transportGaps() {
   const spine = orderedStays();
+  if (!spine.length) return [];
+  const t = state.trip;
   const out = [];
+  const coveredBy = (from, to) => dateRange(from, to).some(d => itemsIn(d).some(it => it.category === 'transit'));
+
+  const first = spine[0];
+  if (t.startDate && first.checkIn && first.checkIn >= t.startDate && !coveredBy(t.startDate, first.checkIn)) {
+    out.push({ id: `transport:arrival:${first.id}`, name: `Transport from the airport to ${first.name}`, date: t.startDate, category: 'transit', rank: 1 });
+  }
+
   for (let i = 0; i < spine.length - 1; i++) {
     const a = spine[i], b = spine[i + 1];
     if (!a.checkOut || !b.checkIn || b.checkIn < a.checkOut) continue;
-    const between = dateRange(a.checkOut, b.checkIn);
-    if (between.some(d => itemsIn(d).some(it => it.category === 'transit'))) continue;
-    out.push({ id: `transport:${a.id}:${b.id}`, name: `Transport from ${a.name} to ${b.name}`, date: a.checkOut, category: 'transit' });
+    if (coveredBy(a.checkOut, b.checkIn)) continue;
+    out.push({ id: `transport:${a.id}:${b.id}`, name: `Transport from ${a.name} to ${b.name}`, date: a.checkOut, category: 'transit', rank: 4 });
   }
+
+  const last = spine[spine.length - 1];
+  if (t.endDate && last.checkOut && last.checkOut <= t.endDate && !coveredBy(last.checkOut, t.endDate)) {
+    out.push({ id: `transport:departure:${last.id}`, name: `Transport from ${last.name} to the airport`, date: last.checkOut, category: 'transit', rank: 4 });
+  }
+
   return out;
 }
+
+/* The two fixed ids a flight entry can have — always present (once the trip
+   has a start/end date) regardless of what's scheduled, since a flight isn't
+   an itinerary stop with a day of its own the way an activity is. */
+export const FLIGHT_IDS = ['flight:outbound', 'flight:return'];
 
 export function bookingEntries() {
   const t = state.trip;
   const meta = t.bookingMeta || {};
   const entries = [];
+
+  if (t.startDate) entries.push({ id: 'flight:outbound', kind: 'flight', name: 'Outbound flight', date: t.startDate, category: 'transit', rank: 0 });
+
   for (const d of days()) {
     for (const s of staysOn(d)) {
-      if (s.checkIn === d) entries.push({ id: s.id, kind: 'stay', name: s.name, date: d, cost: s.cost, category: 'lodging' });
+      if (s.checkIn === d) entries.push({ id: s.id, kind: 'stay', name: s.name, date: d, cost: s.cost, category: 'lodging', rank: 2 });
     }
-    for (const it of itemsIn(d)) entries.push({ id: it.id, kind: 'item', name: it.name, date: d, cost: it.cost, category: it.category });
+    for (const it of itemsIn(d)) entries.push({ id: it.id, kind: 'item', name: it.name, date: d, cost: it.cost, category: it.category, rank: 3 });
   }
-  for (const g of transportGaps()) entries.push({ ...g, kind: 'transport', cost: meta[g.id]?.cost ?? null });
+  for (const g of transportGaps()) entries.push({ id: g.id, kind: 'transport', name: g.name, date: g.date, category: g.category, rank: g.rank });
 
-  entries.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'stay' ? -1 : b.kind === 'stay' ? 1 : 0));
-  return entries.map(e => {
+  if (t.endDate) entries.push({ id: 'flight:return', kind: 'flight', name: 'Return flight', date: t.endDate, category: 'transit', rank: 5 });
+
+  entries.sort((a, b) => a.date.localeCompare(b.date) || a.rank - b.rank);
+  return entries.map(({ rank, ...e }) => {
     const m = meta[e.id] || {};
     const confirmed = !!m.confirmed;
-    return { ...e, confirmed, paid: confirmed && !!m.paid, time: m.time || '', notes: m.notes || '' };
+    // an item/stay's price is its own `cost` field; a transport gap or
+    // flight has no backing record of its own, so its price lives in
+    // bookingMeta instead (see setBooking)
+    const cost = e.kind === 'item' || e.kind === 'stay' ? e.cost : (m.cost ?? null);
+    return { ...e, cost, confirmed, paid: confirmed && !!m.paid, time: m.time || '', notes: m.notes || '' };
   });
 }
 
@@ -484,14 +518,15 @@ export function bookingStatusOf(id) {
 
 /* A stay/item's price is its own `cost` field (the same one shown on its card
    and rolled into the trip total) — the checklist just edits it in place. A
-   transport gap has no backing item, so its price lives in bookingMeta. */
+   transport gap or flight has no backing item, so its price lives in
+   bookingMeta. */
 export function setBooking(id, kind, patch) {
   const t = state.trip;
   const meta = t.bookingMeta || (t.bookingMeta = {});
   const m = meta[id] || (meta[id] = {});
   patch = { ...patch };
   if ('cost' in patch) {
-    if (kind === 'transport') m.cost = patch.cost;
+    if (kind === 'transport' || kind === 'flight') m.cost = patch.cost;
     else updateItem(id, { cost: patch.cost });
     delete patch.cost;
   }

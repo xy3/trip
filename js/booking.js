@@ -59,8 +59,10 @@ function summary(entries) {
   </div>`;
 }
 
+const FLIGHT_TAG = { icon: '✈️', label: 'Flight', color: '#7ab8ff' };
+
 function row(e) {
-  const c = catOf(e.category);
+  const c = e.kind === 'flight' ? FLIGHT_TAG : catOf(e.category);
   const status = e.paid ? 'paid' : e.confirmed ? 'confirmed' : 'open';
   const priceShown = openPrice.has(e.id) || e.cost != null;
   const detailsShown = openDetails.has(e.id) || !!(e.time || e.notes);

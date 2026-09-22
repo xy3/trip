@@ -1,6 +1,6 @@
 import {
   state, days, itemsIn, staysOn, dayCost, tripCost, photosOf, setPhotoRatio, dayRoute, UNSCHEDULED,
-  groupFor, groupList, OVERVIEW,
+  groupFor, groupList, OVERVIEW, bookingStatusOf,
 } from './store.js';
 import { catOf } from './categories.js';
 import { $, esc, fmtDate, fmtDateShort, money, fmtKm, fmtDur, dayCount } from './util.js';
@@ -15,7 +15,7 @@ onLegs((bucket, legs) => {
   paintLegs();
 });
 
-const cur = () => state.trip.currency || 'USD';
+const cur = () => state.trip.currency || 'EUR';
 
 export function render() {
   const root = $('#timeline');
@@ -42,7 +42,7 @@ function overviewBlock() {
   const collapsed = state.trip.collapsed[OVERVIEW] ? ' collapsed' : '';
   const range = ds.length ? `${esc(fmtDateShort(ds[0]))} – ${esc(fmtDateShort(ds[ds.length - 1]))}` : 'Set a date range to begin';
 
-  const stat = (n, label) => `<div class="stat"><b>${n}</b><span>${label}</span></div>`;
+  const stat = (n, label, cls = '') => `<div class="stat${cls ? ` ${cls}` : ''}"><b>${n}</b><span>${label}</span></div>`;
   return `
   <section class="block overview${collapsed}" data-bucket="${OVERVIEW}">
     <header class="block-head" data-collapse>
@@ -61,7 +61,7 @@ function overviewBlock() {
         ${stat(nights, nights === 1 ? 'night' : 'nights')}
         ${stat(stops, stops === 1 ? 'stop' : 'stops')}
         ${ideas ? stat(ideas, ideas === 1 ? 'idea' : 'ideas') : ''}
-        ${cost ? stat(money(cost, cur()), 'total') : ''}
+        ${cost ? stat(money(cost, cur()), 'total', 'stat-cost') : ''}
       </div>
       ${groups.length ? overviewShape(ds, groups) : ''}
     </div>
@@ -168,7 +168,7 @@ function dayBlock(key, i) {
         <div class="block-sub">${items.length} stop${items.length === 1 ? '' : 's'}${stays.length ? ` · ${esc(stays[0].name)}` : ''}</div>
       </div>
       <div class="block-meta">
-        ${cost ? `<span>${money(cost, cur())}</span>` : ''}
+        ${cost ? `<span class="block-cost">${money(cost, cur())}</span>` : ''}
         <button class="icon-btn chev" data-collapse title="Collapse">▾</button>
       </div>
     </header>
@@ -189,7 +189,7 @@ function stayRow(s, dayKey) {
   <div class="stay-block" data-id="${s.id}">
     <div class="stay" data-stay="${s.id}" draggable="true" title="Drag to another day to move this stay">
       <span class="stay-icon">🛏</span>
-      <span class="stay-name">${esc(s.name)}</span>
+      <span class="stay-name">${esc(s.name)}</span>${bookingDot(s.id)}
       <span class="stay-tag">${which} · ${esc(fmtDateShort(s.checkIn))}–${esc(fmtDateShort(s.checkOut))} · ${nights} night${nights === 1 ? '' : 's'}</span>
       <span class="spacer"></span>
       ${s.cost ? `<span class="card-cost">${money(Number(s.cost), cur())}</span>` : ''}
@@ -225,7 +225,7 @@ function card(it, i, withLegs, legTo) {
   <article class="card" draggable="true" data-id="${it.id}" style="--cat:${c.color}">
     <span class="card-index">${withLegs ? i + 1 : '•'}</span>
     <div class="card-main">
-      <div class="card-name">${esc(it.name)} <span class="cat-tag">${c.icon} ${c.label}</span></div>
+      <div class="card-name">${esc(it.name)} <span class="cat-tag">${c.icon} ${c.label}</span>${bookingDot(it.id)}</div>
       ${it.address ? `<div class="card-sub">${esc(it.address)}</div>` : ''}
       ${it.notes ? `<div class="card-notes">${esc(it.notes)}</div>` : ''}
       ${links || files ? `<div class="card-links">${links}${files}</div>` : ''}
@@ -245,6 +245,16 @@ function card(it, i, withLegs, legTo) {
 }
 
 const hostOf = url => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'link'; } };
+
+/* Small status dot from the booking checklist (js/booking.js): blue once
+   confirmed, green once paid, nothing until then — a glance at the itinerary
+   itself without switching to the checklist tab. */
+const bookingDot = id => {
+  const bs = bookingStatusOf(id);
+  return bs.paid ? '<span class="booking-dot paid" title="Paid">✓</span>'
+    : bs.confirmed ? '<span class="booking-dot confirmed" title="Confirmed">✓</span>'
+    : '';
+};
 
 function addRow(bucket, isDay) {
   return `<div class="add-row">

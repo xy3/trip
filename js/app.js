@@ -9,6 +9,7 @@ import { initDnD, dropPlace, PLACE } from './dnd.js';
 import { openEditor } from './editor.js';
 import { openGroupEditor } from './groups.js';
 import { openLightbox } from './lightbox.js';
+import { renderBooking, initBooking } from './booking.js';
 import { buildShareLink, tripFromHash, exportBundle, importBundle } from './share.js';
 import * as db from './db.js';
 import { findPhoto } from './photos.js';
@@ -51,14 +52,17 @@ function syncHeader() {
   if (document.activeElement !== $('#tripTitle')) $('#tripTitle').value = t.title;
   $('#startDate').value = t.startDate || '';
   $('#endDate').value = t.endDate || '';
+  $('#currencySelect').value = t.currency || 'EUR';
   document.title = (t.title || 'Trip Planner') + ' · Trip Planner';
   document.body.dataset.printTitle = t.title || 'Itinerary';
   document.body.dataset.printSub =
     `${t.startDate ? fmtDate(t.startDate) : ''}${t.endDate ? ` – ${fmtDate(t.endDate)}` : ''}`;
+  document.body.classList.toggle('hide-prices', !!t.hidePrices);
 }
 
 function redraw(opts = {}) {
   render();
+  renderBooking();
   map.renderLegend();
   map.refresh(opts);
 }
@@ -67,6 +71,7 @@ function redraw(opts = {}) {
 $('#tripTitle').addEventListener('input', e => store.setTripField('title', e.target.value));
 $('#startDate').addEventListener('change', e => store.setTripField('startDate', e.target.value));
 $('#endDate').addEventListener('change', e => store.setTripField('endDate', e.target.value));
+$('#currencySelect').addEventListener('change', e => store.setTripField('currency', e.target.value));
 
 $('#btnPrint').addEventListener('click', () => window.print());
 
@@ -132,6 +137,8 @@ $('#btnMenu').addEventListener('click', e => {
   e.stopPropagation();
   menu.querySelector('[data-act="autophoto"]').textContent =
     `${state.autoPhoto ? '✓' : '　'} Auto-photo new places`;
+  menu.querySelector('[data-act="hideprices"]').textContent =
+    `${state.trip.hidePrices ? '✓' : '　'} Hide prices when sharing/printing`;
   menu.hidden = !menu.hidden;
 });
 document.addEventListener('click', () => { menu.hidden = true; });
@@ -143,6 +150,11 @@ menu.addEventListener('click', async e => {
     toast(state.autoPhoto
       ? 'New places will get a photo from Wikipedia when one exists.'
       : 'Auto-photo off — use ✨ Find a photo in the editor instead.');
+  } else if (act === 'hideprices') {
+    store.setTripField('hidePrices', !state.trip.hidePrices);
+    toast(state.trip.hidePrices
+      ? 'Prices are hidden from share links and printed/PDF copies. You still see them here.'
+      : 'Prices will show again in share links and printed/PDF copies.');
   } else if (act === 'export') {
     download(`${(state.trip.title || 'trip').replace(/\W+/g, '-').toLowerCase()}.trip.json`, await exportBundle());
   } else if (act === 'import') {
@@ -268,6 +280,7 @@ resultsEl.addEventListener('click', e => {
 /* ---------------- timeline interactions ---------------- */
 const timeline = $('#timeline');
 initDnD(timeline, { onCreate: autoPhoto });
+initBooking();
 
 timeline.addEventListener('click', async e => {
   const t = e.target;
@@ -381,7 +394,7 @@ function focusBucket(bucket) {
 function setFocusDay(bucket) {
   if (state.focusDay === bucket) return;
   state.focusDay = bucket;
-  $('.tab[data-view="all"]').classList.toggle('active', !state.focusDay);
+  paintViewTabs();
   redraw({ fit: true });
 }
 
@@ -394,11 +407,28 @@ stayToggle.addEventListener('click', () => {
 
 $('#btnAddGroup').addEventListener('click', () => openGroupEditor({ start: dayTarget() || state.trip.startDate }));
 
+/* ---------------- left-pane view: the itinerary, or the booking checklist */
+let currentView = 'trip';
+
+function setView(view) {
+  currentView = view;
+  $('#timeline').hidden = view !== 'trip';
+  $('#bookingPanel').hidden = view !== 'booking';
+  paintViewTabs();
+}
+
+function paintViewTabs() {
+  $('.tab[data-view="all"]').classList.toggle('active', currentView === 'trip' && !state.focusDay);
+  $('.tab[data-view="booking"]').classList.toggle('active', currentView === 'booking');
+}
+
 $('.tab[data-view="all"]').addEventListener('click', () => {
   state.focusDay = null;
-  $('.tab[data-view="all"]').classList.add('active');
+  setView('trip');
   redraw({ fit: true });
 });
+
+$('.tab[data-view="booking"]').addEventListener('click', () => setView('booking'));
 
 /* photos */
 function pickPhotos(bucket) {

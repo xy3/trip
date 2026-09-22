@@ -193,6 +193,16 @@ assert.equal(Object.keys(decoded.stays).length, 2, 'stays travel in the share li
 assert.deepEqual(decoded.photos, {}, 'no photos were added in this test, so none travel');
 assert.equal(await share.tripFromHash('#nope'), null);
 
+// "hide prices" strips cost from the link, but never from the trip you're editing
+const priceTest = store.addItem({ name: 'Ferry', cost: 40 }, '2026-10-01');
+store.setTripField('hidePrices', true);
+const { url: url2 } = await share.buildShareLink();
+const decoded2 = await share.tripFromHash(new URL(url2).hash);
+assert.equal(decoded2.items[priceTest.id].cost, null, 'cost is stripped from the shared copy');
+assert.equal(decoded2.hidePrices, undefined, 'the preference itself does not travel in the link');
+assert.equal(state.trip.items[priceTest.id].cost, 40, 'your own trip keeps its real cost');
+store.setTripField('hidePrices', false);
+
 /* --- day groups: label, colour, and clip a run of days --- */
 store.replaceTrip({ ...store.blankTrip(), startDate: '2026-11-01', endDate: '2026-11-06' });
 const tokyo = store.addGroup({ title: 'Tokyo', color: '#f2b705', start: '2026-11-01', end: '2026-11-03' });
@@ -216,5 +226,54 @@ assert.equal(state.trip.groups.find(g => g.id === kyoto.id)?.end, '2026-11-04');
 
 store.removeGroup(kyoto.id);
 assert.equal(store.groupList().length, 1);
+
+/* --- booking checklist: activities, stays, and inferred transport gaps --- */
+store.replaceTrip({ ...store.blankTrip(), startDate: '2026-12-01', endDate: '2026-12-05' });
+const parisHotel = store.addStay({ name: 'Paris Hotel', checkIn: '2026-12-01', checkOut: '2026-12-02', cost: 100 });
+const romeHotel = store.addStay({ name: 'Rome Hotel', checkIn: '2026-12-03', checkOut: '2026-12-05', cost: 150 });
+const dinner = store.addItem({ name: 'Dinner', category: 'food', cost: 40 }, '2026-12-01');
+
+let entries = store.bookingEntries();
+assert.deepEqual(entries.map(e => e.name),
+  ['Paris Hotel', 'Dinner', 'Transport from Paris Hotel to Rome Hotel', 'Rome Hotel']);
+assert.equal(entries.every(e => !e.confirmed && !e.paid), true, 'nothing booked yet');
+
+// a transit activity scheduled in the gap covers it — no synthetic line needed
+const train = store.addItem({ name: 'Train to Rome', category: 'transit' }, '2026-12-02');
+assert.equal(store.bookingEntries().some(e => e.kind === 'transport'), false, 'a scheduled transit stop covers the gap');
+await store.removeItem(train.id);
+assert.equal(store.bookingEntries().some(e => e.kind === 'transport'), true, 'gap reappears once the transit stop is gone');
+
+// confirmed -> paid, and back down again
+store.setBooking(dinner.id, 'item', { confirmed: true, time: '19:30', notes: 'Window table requested' });
+let d = () => store.bookingEntries().find(e => e.id === dinner.id);
+assert.equal(d().confirmed, true);
+assert.equal(d().paid, false, 'not paid until marked so');
+assert.equal(d().time, '19:30');
+
+store.setBooking(dinner.id, 'item', { paid: true });
+assert.equal(d().paid, true);
+
+store.setBooking(dinner.id, 'item', { confirmed: false });
+assert.equal(d().paid, false, 'un-confirming also clears paid — nothing can be paid without being confirmed');
+
+// a checklist price edit for an activity/stay IS its `cost` field — the same
+// one the day/trip totals already use, not a second number to keep in sync
+store.setBooking(dinner.id, 'item', { cost: 55 });
+assert.equal(state.trip.items[dinner.id].cost, 55);
+assert.equal(d().cost, 55);
+
+// a transport gap has no backing item, so its price lives in bookingMeta
+const gap = () => store.bookingEntries().find(e => e.kind === 'transport');
+store.setBooking(gap().id, 'transport', { cost: 120, confirmed: true });
+assert.equal(gap().cost, 120);
+assert.equal(gap().confirmed, true);
+
+// deleting a booked activity forgets its booking status too
+store.setBooking(romeHotel.id, 'stay', { confirmed: true });
+await store.removeItem(dinner.id);
+store.setTripField('endDate', state.trip.endDate);   // re-normalize without changing anything
+assert.equal(state.trip.bookingMeta[dinner.id], undefined, 'booking status for a deleted item is pruned');
+assert.equal(state.trip.bookingMeta[romeHotel.id]?.confirmed, true, 'a still-existing stay keeps its status');
 
 console.log('all core checks passed');

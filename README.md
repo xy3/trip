@@ -62,6 +62,12 @@ node server/main.js             # Node 22.5+, still no npm install
 - A **Trip overview** card sits above everything else: day/night/stop counts and the running
   total at a glance, plus — once you have groups — a segmented strip of the whole timeline
   coloured by group, with a legend you can click to jump straight to one.
+- **🎫 To book** is a separate checklist tab: one row per activity and stay, plus an inferred
+  "Transport from X to Y" row for any gap between two different stays that has no transit
+  activity already scheduled in it. Each row takes a price (the same `cost` field used
+  everywhere else), a free-text "booked for" field (time, flight number, confirmation code…),
+  notes, and confirmed/paid checkboxes — a row can't be paid without being confirmed first. It's
+  planning scratch space: left out of shared links and the printed/PDF itinerary.
 
 ### 📋 Itinerary
 
@@ -116,6 +122,9 @@ node server/main.js             # Node 22.5+, still no npm install
 - **Share** copies a read-only URL. Signed in, it's a short link to a server-hosted copy with
   full-quality photos; without an account it falls back to the whole itinerary encoded into the
   link itself, with no photos (see [Share links](#share-links)).
+- ⋯ → **Hide prices when sharing/printing** leaves every cost — and the day/trip totals they
+  roll into — out of share links and printed/PDF copies, without touching what you see while
+  editing.
 - ⋯ → export/import a `.trip.json` bundle for full-quality photos plus file attachments.
 
 ---
@@ -135,6 +144,7 @@ Everything is one plain JSON document, `state.trip`, defined in `js/store.js`:
   photos: { [bucket]: [{ id, caption, source, r }] },
   collapsed: { [bucket]: true },
   groups: [{ id, title, color, start, end }],   // day-groups, e.g. "Tokyo" over start…end
+  bookingMeta: { [id]: { confirmed, paid, time, notes, cost? } },  // booking checklist status
 }
 ```
 
@@ -160,6 +170,14 @@ or drops groups the same way `normalize()` already does for `order`.
 
 Dates are plain `YYYY-MM-DD` strings throughout (`js/util.js`), never `Date` objects with a
 time — so no trip has ever shifted by a day because of a timezone.
+
+**`bookingMeta`** is keyed by the id it describes: an activity or stay's own id, sharing that
+object rather than duplicating the row, or a synthetic `transport:<idA>:<idB>` id for an
+inferred transport gap, which has no backing item so its `cost` lives here instead of on an
+activity. `js/store.js`'s `transportGaps()` recomputes those gaps from the stays and their
+scheduled transit activities on every call — nothing about a gap is stored, only its booking
+status once you've entered any — and `normalize()` prunes `bookingMeta` entries for anything
+that no longer exists (a deleted activity/stay, or a gap a since-added transit stop now covers).
 
 ### Where your data lives
 
@@ -421,7 +439,12 @@ Either way, opening a share link loads that trip in read-only mode — editing i
 is a no-op, and a banner offers *Make an editable copy*, which clones it into the visitor's own
 browser (downloading any server-hosted photos into that browser's IndexedDB, so the copy behaves
 exactly like any other local trip, independent of the original share). And either way, anyone
-holding the link can read the itinerary — treat it as public.
+holding the link can read the itinerary — treat it as public. `bookingMeta` (confirmation codes,
+paid status, private notes) is stripped from both paths before the trip ever leaves your device
+or account — a guest sees the itinerary, not your booking checklist. Turn on **Hide prices when
+sharing/printing** (⋯ menu) and every `cost` is stripped the same way, on both paths, before the
+trip is encoded or handed to the server — it's gone from the data itself, not just hidden with
+CSS, and it never touches the copy you're actually editing.
 
 ### External services
 

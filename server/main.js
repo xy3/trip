@@ -137,8 +137,13 @@ async function placesTextSearch(q, near, limit) {
    surface. Each photo gets a real URL in place of its bare id. */
 function publicTrip(trip, token) {
   const t = JSON.parse(JSON.stringify(trip));
-  for (const o of [...Object.values(t.items || {}), ...Object.values(t.stays || {})]) o.files = [];
+  for (const o of [...Object.values(t.items || {}), ...Object.values(t.stays || {})]) {
+    o.files = [];
+    if (t.hidePrices) o.cost = null;
+  }
   for (const list of Object.values(t.photos || {})) for (const p of list) p.url = `/api/shares/${token}/photos/${p.id}`;
+  delete t.bookingMeta;   // confirmation codes / paid status are not for guests
+  delete t.hidePrices;
   return t;
 }
 

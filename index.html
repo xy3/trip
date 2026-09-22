@@ -20,6 +20,20 @@
   <div class="dates">
     <label>Start <input type="date" id="startDate"></label>
     <label>End <input type="date" id="endDate"></label>
+    <label>Currency
+      <select id="currencySelect">
+        <option value="EUR">EUR €</option>
+        <option value="USD">USD $</option>
+        <option value="GBP">GBP £</option>
+        <option value="JPY">JPY ¥</option>
+        <option value="AUD">AUD $</option>
+        <option value="CAD">CAD $</option>
+        <option value="CHF">CHF Fr</option>
+        <option value="CNY">CNY ¥</option>
+        <option value="NZD">NZD $</option>
+        <option value="SEK">SEK kr</option>
+      </select>
+    </label>
   </div>
 
   <div class="topbar-spacer"></div>
@@ -36,6 +50,7 @@
     <button id="btnMenu" class="btn btn-icon" title="More" aria-haspopup="true">⋯</button>
     <div id="menu" class="menu" hidden>
       <button data-act="autophoto">Auto-photo new places</button>
+      <button data-act="hideprices">Hide prices when sharing/printing</button>
       <button data-act="export">Export trip file…</button>
       <button data-act="import">Import trip file…</button>
       <button data-act="fit">Fit map to trip</button>
@@ -66,12 +81,14 @@
 
     <div class="view-tabs" role="tablist">
       <button class="tab active" data-view="all" role="tab">Whole trip</button>
+      <button class="tab" data-view="booking" role="tab" title="Everything left to book, with price/paid/confirmed status">🎫 To book</button>
       <button class="tab" id="btnStayRoute" title="Route each day out of and back into where you are staying">🛏 Stays in route</button>
       <button class="tab" id="btnAddGroup" title="Label a stretch of days with a title and colour, e.g. “Tokyo”">🏷 Group days</button>
       <span class="tab-hint">Click a day to focus the map</span>
     </div>
 
     <div id="timeline" class="timeline"></div>
+    <div id="bookingPanel" class="timeline booking-panel" hidden></div>
   </section>
 
   <div class="divider" id="divider" role="separator" aria-orientation="vertical" title="Drag to resize"></div>

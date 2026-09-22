@@ -13,7 +13,7 @@ export function blankTrip() {
     v: VERSION,
     id: uid(),
     title: '',
-    currency: 'USD',
+    currency: 'EUR',
     startDate: start,
     endDate: addDays(start, 4),
     items: {},
@@ -22,6 +22,8 @@ export function blankTrip() {
     photos: {},
     collapsed: {},
     groups: [],
+    bookingMeta: {},
+    hidePrices: false,
   };
 }
 
@@ -98,6 +100,8 @@ function migrate(t) {
   trip.photos = trip.photos || {};
   trip.collapsed = trip.collapsed || {};
   trip.groups = trip.groups || [];
+  trip.bookingMeta = trip.bookingMeta || {};
+  trip.hidePrices = trip.hidePrices || false;
   return trip;
 }
 
@@ -139,6 +143,12 @@ export function normalize() {
   } else {
     t.groups = [];
   }
+
+  // booking checklist: forget status for anything that no longer exists — a
+  // deleted item/stay, or a transport gap that a since-added transit item
+  // now covers
+  const validBooking = new Set([...Object.keys(t.items), ...Object.keys(t.stays), ...transportGaps().map(g => g.id)]);
+  for (const id of Object.keys(t.bookingMeta)) if (!validBooking.has(id)) delete t.bookingMeta[id];
 }
 
 export const days = () => dateRange(state.trip.startDate, state.trip.endDate);
@@ -413,6 +423,81 @@ export function updateGroup(id, patch) {
 export function removeGroup(id) {
   state.trip.groups = (state.trip.groups || []).filter(g => g.id !== id);
   save(); emit('groups');
+}
+
+/* ---------------- booking checklist ---------------- */
+/* Everything left to book: every scheduled activity, every stay, and — where
+   two consecutive stays have no transit activity already covering the days
+   between them — a synthetic "Transport from X to Y" line. Status
+   (confirmed/paid) and free-form booking details live in trip.bookingMeta,
+   keyed by the item/stay id, or by a synthetic id for a transport gap. */
+/* Stays in date order, deduped like staySpine() — but not restricted to
+   geolocated ones, since a gap between two stays needs booking whether or
+   not either has coordinates yet. */
+function orderedStays() {
+  return Object.values(state.trip.stays)
+    .filter(s => s.checkIn && s.checkOut)
+    .sort((a, b) => a.checkIn.localeCompare(b.checkIn))
+    .filter((s, i, arr) => i === 0 || s.id !== arr[i - 1].id);
+}
+
+export function transportGaps() {
+  const spine = orderedStays();
+  const out = [];
+  for (let i = 0; i < spine.length - 1; i++) {
+    const a = spine[i], b = spine[i + 1];
+    if (!a.checkOut || !b.checkIn || b.checkIn < a.checkOut) continue;
+    const between = dateRange(a.checkOut, b.checkIn);
+    if (between.some(d => itemsIn(d).some(it => it.category === 'transit'))) continue;
+    out.push({ id: `transport:${a.id}:${b.id}`, name: `Transport from ${a.name} to ${b.name}`, date: a.checkOut, category: 'transit' });
+  }
+  return out;
+}
+
+export function bookingEntries() {
+  const t = state.trip;
+  const meta = t.bookingMeta || {};
+  const entries = [];
+  for (const d of days()) {
+    for (const s of staysOn(d)) {
+      if (s.checkIn === d) entries.push({ id: s.id, kind: 'stay', name: s.name, date: d, cost: s.cost, category: 'lodging' });
+    }
+    for (const it of itemsIn(d)) entries.push({ id: it.id, kind: 'item', name: it.name, date: d, cost: it.cost, category: it.category });
+  }
+  for (const g of transportGaps()) entries.push({ ...g, kind: 'transport', cost: meta[g.id]?.cost ?? null });
+
+  entries.sort((a, b) => a.date.localeCompare(b.date) || (a.kind === 'stay' ? -1 : b.kind === 'stay' ? 1 : 0));
+  return entries.map(e => {
+    const m = meta[e.id] || {};
+    const confirmed = !!m.confirmed;
+    return { ...e, confirmed, paid: confirmed && !!m.paid, time: m.time || '', notes: m.notes || '' };
+  });
+}
+
+/* Confirmed/paid for a single activity or stay — used to paint the small
+   status dot on its card in the itinerary itself, not just the checklist. */
+export function bookingStatusOf(id) {
+  const m = (state.trip.bookingMeta || {})[id];
+  const confirmed = !!m?.confirmed;
+  return { confirmed, paid: confirmed && !!m?.paid };
+}
+
+/* A stay/item's price is its own `cost` field (the same one shown on its card
+   and rolled into the trip total) — the checklist just edits it in place. A
+   transport gap has no backing item, so its price lives in bookingMeta. */
+export function setBooking(id, kind, patch) {
+  const t = state.trip;
+  const meta = t.bookingMeta || (t.bookingMeta = {});
+  const m = meta[id] || (meta[id] = {});
+  patch = { ...patch };
+  if ('cost' in patch) {
+    if (kind === 'transport') m.cost = patch.cost;
+    else updateItem(id, { cost: patch.cost });
+    delete patch.cost;
+  }
+  Object.assign(m, patch);
+  if (!m.confirmed) m.paid = false;   // can't be paid for without being confirmed
+  save(); emit('booking');
 }
 
 /* Every blob id the trip still points at. */

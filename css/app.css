@@ -109,6 +109,13 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 }
 .dates input:hover{background:var(--glass-2)}
 .dates input:focus{outline:none;border-color:rgba(122,184,255,.5)}
+.dates select{
+  border:1px solid var(--line-2); background:var(--glass); border-radius:8px;
+  padding:5px 6px; font-size:12.5px; box-shadow:var(--inner); cursor:pointer;
+}
+.dates select:hover{background:var(--glass-2)}
+.dates select:focus{outline:none;border-color:rgba(122,184,255,.5)}
+.dates select option{background:var(--panel-solid);color:var(--ink)}
 ::-webkit-calendar-picker-indicator{filter:invert(.75);cursor:pointer}
 
 .topbar-spacer{flex:1}
@@ -325,6 +332,15 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
   border:1px solid color-mix(in srgb, var(--cat) 30%, transparent);
   border-radius:6px; padding:1px 6px;
 }
+/* status dot from the booking checklist, on a card or stay's name */
+.booking-dot{
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:14px;height:14px;border-radius:50%;font-size:9px;font-weight:800;
+  color:#0b0d10;vertical-align:middle;
+}
+.booking-dot.confirmed{background:var(--accent)}
+.booking-dot.paid{background:#57c98a}
+
 .card-sub{color:var(--ink-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-notes{color:var(--ink-2);font-size:12.5px;white-space:pre-wrap;margin-top:5px}
 .card-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -385,6 +401,59 @@ body.has-banner .split{height:calc(100% - var(--topbar-h) - 41px)}
 /* image-file drag target */
 .block.filedrop,.card.filedrop,.stay-block.filedrop{outline:1px dashed rgba(122,184,255,.6);outline-offset:2px}
 .block.filedrop{background:var(--accent-soft)}
+
+/* ---------- booking checklist ---------- */
+.booking-summary{display:flex;flex-wrap:wrap;gap:20px;padding:2px 2px 16px}
+.booking-summary .stat{display:flex;flex-direction:column;gap:2px}
+.booking-summary .stat b{font-size:19px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.booking-summary .stat span{font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+
+.booking-empty{color:var(--ink-3);font-size:13px;padding:26px 8px;text-align:center}
+
+.booking-row{
+  display:flex; gap:11px; align-items:flex-start;
+  border:1px solid var(--line); border-left:3px solid var(--line-2); border-radius:var(--radius);
+  background:var(--glass); padding:11px 12px; margin-bottom:10px;
+  transition:border-color .16s, background .16s;
+}
+.booking-row.status-confirmed{border-left-color:var(--accent); background:linear-gradient(90deg, rgba(122,184,255,.09), transparent)}
+.booking-row.status-paid{border-left-color:#57c98a; background:linear-gradient(90deg, rgba(87,201,138,.11), transparent)}
+.booking-body{flex:1;min-width:0}
+.booking-thumb{
+  width:52px;height:52px;flex:none;border-radius:9px;object-fit:cover;
+  border:1px solid var(--line); background:var(--glass-2);
+}
+
+.booking-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px}
+.booking-name{font-weight:600}
+.booking-date{color:var(--ink-3);font-size:12px;margin-left:auto;white-space:nowrap}
+
+.booking-fields{display:flex;flex-wrap:wrap;gap:9px 14px;align-items:end}
+.booking-fields .bf{flex:1 1 160px;min-width:120px}
+.booking-fields .btn-link{margin-bottom:1px}
+.bf{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--ink-3);letter-spacing:.02em}
+.bf input{
+  border:1px solid var(--line-2); background:var(--glass); border-radius:8px; padding:6px 9px;
+  color:var(--ink); box-shadow:var(--inner); font-size:13px;
+}
+.bf input::placeholder{color:var(--ink-3)}
+.bf input:focus{outline:none;border-color:rgba(122,184,255,.5);background:var(--glass-2)}
+.bf-check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-2);white-space:nowrap;padding-bottom:7px}
+.bf-check input{accent-color:var(--accent)}
+.bf-check input:disabled{opacity:.4;cursor:not-allowed}
+
+/* "+ Add price" / "+ Add details" — a lean prompt in place of the field
+   until there's something to show or you've asked to fill it in */
+.btn-link{border:0;background:none;padding:6px 2px;cursor:pointer;color:var(--accent);font-size:12.5px;white-space:nowrap}
+.btn-link:hover{text-decoration:underline}
+
+.booking-details{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:9px}
+.b-notes{
+  display:block; width:100%; border:1px solid var(--line-2); background:var(--glass); border-radius:8px;
+  padding:7px 9px; color:var(--ink); box-shadow:var(--inner); font-size:12.5px; resize:vertical; min-height:34px;
+}
+.b-notes::placeholder{color:var(--ink-3)}
+.b-notes:focus{outline:none;border-color:rgba(122,184,255,.5);background:var(--glass-2)}
 
 /* ---------- map ---------- */
 .map-overlay{
@@ -502,6 +571,7 @@ fieldset.field legend{padding:0 6px;font-size:11px;text-transform:uppercase;lett
 
 body.readonly .card{cursor:default}
 body.readonly .add-row,body.readonly .card-actions,body.readonly .photo-del,body.readonly .searchbar{display:none}
+body.readonly .tab[data-view="booking"]{display:none}
 
 @media (prefers-reduced-motion: reduce){ *{transition:none !important;scroll-behavior:auto} }
 

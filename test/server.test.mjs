@@ -250,6 +250,22 @@ await check('sharing publishes a public, read-only copy with real photo URLs', a
   assert.equal((await req('/api/shares/not-a-real-token', { headers: { Cookie: '' } })).status, 404);
 });
 
+await check('"hide prices" strips cost from a shared trip, without touching the saved copy', async () => {
+  await jreq('/api/trip', { method: 'PUT', body: JSON.stringify({ baseRev: rev, trip: trip({
+    title: 'Kansai v6', hidePrices: true,
+    items: { a: { id: 'a', name: 'Flight', cost: 400, files: [] } },
+    order: { unscheduled: ['a'] },
+  }) }) });
+  rev = 6;
+
+  const pub = await jreq(`/api/shares/${shareToken}`, { headers: { Cookie: '' } });
+  assert.equal(pub.body.trip.items.a.cost, null, 'cost is stripped from the public copy');
+  assert.equal(pub.body.trip.hidePrices, undefined, 'the preference itself is not sent to guests');
+
+  const mine = await jreq('/api/trip');
+  assert.equal(mine.body.trip.items.a.cost, 400, 'the owner\'s own saved copy keeps its real cost');
+});
+
 await check('one account cannot read another account\'s blobs', async () => {
   const mine = cookies;
   cookies = new Map();

@@ -39,11 +39,18 @@ async function squeeze(stream, bytes) {
   return new Uint8Array(await new Response(cs.readable).arrayBuffer());
 }
 
-/* Trimmed copy for the fragment path: no binaries, no attachments. */
+/* Trimmed copy for the fragment path: no binaries, no attachments, and no
+   booking status/notes — that's private planning detail, not itinerary.
+   Prices come out too, if you've asked to keep them out of anything shared. */
 function shareableTrip() {
   const t = JSON.parse(JSON.stringify(state.trip));
   t.photos = {};
-  for (const o of [...Object.values(t.items), ...Object.values(t.stays)]) o.files = [];
+  delete t.bookingMeta;
+  for (const o of [...Object.values(t.items), ...Object.values(t.stays)]) {
+    o.files = [];
+    if (t.hidePrices) o.cost = null;
+  }
+  delete t.hidePrices;
   return t;
 }
 

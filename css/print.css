@@ -19,6 +19,17 @@ html, body { height:auto; overflow:visible; background:#fff; color:#000; font-si
 .split { display:block; height:auto; }
 .pane-left { width:auto !important; border:0; background:#fff; }
 .timeline { overflow:visible; padding:0; }
+/* the itinerary always prints, and the booking checklist never does — that
+   page is working notes for the planner, not something a guest reading the
+   PDF needs — regardless of which tab happens to be on screen */
+#timeline { display:block !important; }
+#bookingPanel { display:none !important; }
+
+/* "Hide prices when sharing/printing" (⋯ menu) — costs are still there on
+   screen, just left out of the printed/PDF copy */
+body.hide-prices .card-cost,
+body.hide-prices .block-cost,
+body.hide-prices .stat-cost { display:none !important; }
 
 body::before{
   content: attr(data-print-title);
